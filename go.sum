@@ -257,6 +257,8 @@ github.com/json-iterator/go v1.1.10/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/
 github.com/jstemmer/go-junit-report v0.0.0-20190106144839-af01ea7f8024/go.mod h1:6v2b51hI/fHJwM22ozAgKL4VKDeJcHhJFhtBdhmNjmU=
 github.com/jstemmer/go-junit-report v0.9.1/go.mod h1:Brl9GWCQeLvo8nXZwPNNblvFj/XSXhF0NWZEnDohbsk=
 github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfVYBRgL+9YlvaHOwJU=
+github.com/julianKatz/frameworks/constraint v0.0.0-20210511203422-6f4df9ad9d27 h1:GDfeTFi8FjWs1ysVowZsBfAFkibzIHXsI4zdxG7X0xs=
+github.com/julianKatz/frameworks/constraint v0.0.0-20210511203422-6f4df9ad9d27/go.mod h1:y8wOVfZ6+bEmbhBMnLnFlQrJB9eQpVk+dIDa7YrtocI=
 github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
 github.com/kisielk/errcheck v1.1.0/go.mod h1:EZBBE59ingxPouuu3KfxchcWSUPOHkagtvWXihfKN4Q=
 github.com/kisielk/errcheck v1.2.0/go.mod h1:/BMXB+zMLi60iA8Vv6Ksmxu/1UDYcXs4uQLJ+jE2L00=
@@ -330,8 +332,6 @@ github.com/onsi/gomega v1.10.2 h1:aY/nuoWlKJud2J6U0E3NWsjlg+0GtwXxgEqthRdzlcs=
 github.com/onsi/gomega v1.10.2/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/open-policy-agent/cert-controller v0.2.0 h1:Z+IPOYDor28l6cjEo2WvTZY6Bv5oYR6wECEIP8pyG/M=
 github.com/open-policy-agent/cert-controller v0.2.0/go.mod h1:SWS7Ame8oKHF11cDsQCFlULrrOMV5Z59FIGEAF/M6YI=
-github.com/open-policy-agent/frameworks/constraint v0.0.0-20210503204408-3f51770b2910 h1:+uTF7/SmotBN/+uhzFNTuTW+o/PSiO+s9Vfni+8rjqg=
-github.com/open-policy-agent/frameworks/constraint v0.0.0-20210503204408-3f51770b2910/go.mod h1:y8wOVfZ6+bEmbhBMnLnFlQrJB9eQpVk+dIDa7YrtocI=
 github.com/open-policy-agent/opa v0.24.0 h1:fnGOIux+TTGZsC0du1bRBtV8F+KPN55Hks12uE3Fq3E=
 github.com/open-policy-agent/opa v0.24.0/go.mod h1:qEyD/i8j+RQettHGp4f86yjrjvv+ZYia+JHCMv2G7wA=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
