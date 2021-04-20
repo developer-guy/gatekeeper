@@ -54,12 +54,13 @@ var gvkAssign = schema.GroupVersionKind{
 type Adder struct {
 	MutationCache *mutation.System
 	Tracker       *readiness.Tracker
+	ProviderCache *externaldata.ProviderCache
 }
 
 // Add creates a new Assign Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func (a *Adder) Add(mgr manager.Manager) error {
-	r := newReconciler(mgr, a.MutationCache, a.Tracker)
+	r := newReconciler(mgr, a.MutationCache, a.ProviderCache, a.Tracker)
 	return add(mgr, r)
 }
 
@@ -69,11 +70,12 @@ func (a *Adder) InjectWatchManager(w *watch.Manager) {}
 
 func (a *Adder) InjectControllerSwitch(cs *watch.ControllerSwitch) {}
 
-func (a *Adder) InjectProviderCache(providerCache *externaldata.ProviderCache) {}
+func (a *Adder) InjectProviderCache(providerCache *externaldata.ProviderCache) {
+	a.ProviderCache = providerCache
+}
 
 func (a *Adder) InjectTracker(t *readiness.Tracker) {
 	a.Tracker = t
-
 }
 
 func (a *Adder) InjectMutationCache(mutationCache *mutation.System) {
@@ -81,8 +83,8 @@ func (a *Adder) InjectMutationCache(mutationCache *mutation.System) {
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, mutationCache *mutation.System, tracker *readiness.Tracker) *Reconciler {
-	r := &Reconciler{system: mutationCache, Client: mgr.GetClient(), tracker: tracker}
+func newReconciler(mgr manager.Manager, mutationCache *mutation.System, providerCache *externaldata.ProviderCache, tracker *readiness.Tracker) *Reconciler {
+	r := &Reconciler{system: mutationCache, providerCache: providerCache, Client: mgr.GetClient(), tracker: tracker}
 	return r
 }
 
@@ -112,6 +114,7 @@ type Reconciler struct {
 	client.Client
 	system  *mutation.System
 	tracker *readiness.Tracker
+	providerCache *externaldata.ProviderCache
 }
 
 // +kubebuilder:rbac:groups=mutations.gatekeeper.sh,resources=*,verbs=get;list;watch;create;update;patch;delete
@@ -155,7 +158,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	mutator, err := mutation.MutatorForAssign(assign)
+	cache := r.providerCache.Cache
+	mutator, err := mutation.MutatorForAssign(assign, cache)
 	if err != nil {
 		log.Error(err, "Creating mutator for resource failed", "resource", request.NamespacedName)
 		tracker.CancelExpect(assign)

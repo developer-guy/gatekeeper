@@ -26,15 +26,11 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 
 	var resp string
 	if mutator.HasExternalData() != "" {
-		//providerCache := mutator.GetExternalData()
+		providerCache := mutator.GetExternalData()
 
-		fakeCache := make(map[string]string)
-		// fakeCache["quay"] = "http://10.96.31.124:8090/hello"
-		fakeCache["quay"] = "http://10.96.31.124:8090/digest"
+		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "cache", providerCache, "proxyURL", providerCache["quay"])
 
-		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "proxyURL", fakeCache["quay"])
-
-		resp = sendProviderRequest(fakeCache["quay"], req)
+		resp = sendProviderRequest(providerCache["quay"], req)
 	}
 
 	//log.Info("***", "mutator", mutator, "id", mutator.ID())

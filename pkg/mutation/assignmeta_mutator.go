@@ -106,6 +106,7 @@ func (m *AssignMetadataMutator) DeepCopy() types.Mutator {
 		id:             m.id,
 		assignMetadata: m.assignMetadata.DeepCopy(),
 		path:           &p,
+		providerCache:  m.providerCache,
 	}
 	return res
 }
