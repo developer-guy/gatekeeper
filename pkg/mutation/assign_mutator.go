@@ -12,6 +12,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/schema"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"github.com/pkg/errors"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,8 +44,8 @@ func (m *AssignMutator) Matches(obj runtime.Object, ns *corev1.Namespace) bool {
 	return matches
 }
 
-func (m *AssignMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
-	return mutate(m, m.tester, m.testValue, obj)
+func (m *AssignMutator) Mutate(obj *unstructured.Unstructured, req *admissionv1.AdmissionRequest) (bool, error) {
+	return mutate(m, m.tester, m.testValue, obj, req)
 }
 
 // valueTest returns true if it is okay for the mutation func to override the value

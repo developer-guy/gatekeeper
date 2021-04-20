@@ -11,10 +11,11 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	path "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
+	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface{}, bool) bool, obj *unstructured.Unstructured) (bool, error) {
+func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface{}, bool) bool, obj *unstructured.Unstructured, req *admissionv1.AdmissionRequest) (bool, error) {
 	s := &mutatorState{mutator: mutator, tester: tester, valueTest: valueTest}
 	if len(mutator.Path().Nodes) == 0 {
 		return false, fmt.Errorf("mutator %v has an empty target location", mutator.ID())
@@ -28,11 +29,12 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 		//providerCache := mutator.GetExternalData()
 
 		fakeCache := make(map[string]string)
-		fakeCache["quay"] = "http://10.96.31.124:8090/hello"
+		// fakeCache["quay"] = "http://10.96.31.124:8090/hello"
+		fakeCache["quay"] = "http://10.96.31.124:8090/digest"
 
 		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "proxyURL", fakeCache["quay"])
 
-		resp = sendProviderRequest(fakeCache["quay"], obj)
+		resp = sendProviderRequest(fakeCache["quay"], req)
 	}
 
 	//log.Info("***", "mutator", mutator, "id", mutator.ID())
@@ -41,8 +43,8 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 	return mutated, err
 }
 
-func sendProviderRequest(providerURL string, obj *unstructured.Unstructured) string {
-	out, _ := json.Marshal(obj)
+func sendProviderRequest(providerURL string, admissionReq *admissionv1.AdmissionRequest) string {
+	out, _ := json.Marshal(admissionReq)
     req, _ := http.NewRequest("POST", providerURL, bytes.NewBuffer(out))
     req.Header.Set("Content-Type", "application/json")
 

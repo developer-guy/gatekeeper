@@ -5,6 +5,7 @@ import (
 
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	"github.com/pkg/errors"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -24,7 +25,7 @@ type Mutator interface {
 	// Matches tells if the given object is eligible for this mutation.
 	Matches(obj runtime.Object, ns *corev1.Namespace) bool
 	// Mutate applies the mutation to the given object
-	Mutate(obj *unstructured.Unstructured) (bool, error)
+	Mutate(*unstructured.Unstructured, *admissionv1.AdmissionRequest) (bool, error)
 	// ID returns the id of the current mutator.
 	ID() ID
 	// Has diff tells if the mutator has meaningful differences

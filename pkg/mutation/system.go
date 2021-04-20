@@ -11,6 +11,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/schema"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"github.com/pkg/errors"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -79,7 +80,7 @@ func (s *System) Upsert(m types.Mutator) error {
 
 // Mutate applies the mutation in place to the given object. Returns
 // true if a mutation was performed.
-func (s *System) Mutate(obj *unstructured.Unstructured, ns *corev1.Namespace) (bool, error) {
+func (s *System) Mutate(obj *unstructured.Unstructured, req *admissionv1.AdmissionRequest, ns *corev1.Namespace) (bool, error) {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
 	original := obj.DeepCopy()
@@ -92,7 +93,7 @@ func (s *System) Mutate(obj *unstructured.Unstructured, ns *corev1.Namespace) (b
 		old := obj.DeepCopy()
 		for _, m := range s.orderedMutators {
 			if m.Matches(obj, ns) {
-				mutated, err := m.Mutate(obj)
+				mutated, err := m.Mutate(obj, req)
 				if mutated && *MutationLoggingEnabled {
 					appliedMutations = append(appliedMutations, m)
 				}

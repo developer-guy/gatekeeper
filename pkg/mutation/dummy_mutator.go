@@ -7,6 +7,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	path "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,9 +51,9 @@ func (d *dummyMutator) Matches(obj runtime.Object, ns *corev1.Namespace) bool {
 	return matches
 }
 
-func (d *dummyMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
+func (d *dummyMutator) Mutate(obj *unstructured.Unstructured, req *admissionv1.AdmissionRequest) (bool, error) {
 	t, _ := path.New(nil)
-	return mutate(d, t, func(_ interface{}, _ bool) bool { return true }, obj)
+	return mutate(d, t, func(_ interface{}, _ bool) bool { return true }, obj, req)
 }
 
 func (d *dummyMutator) String() string {

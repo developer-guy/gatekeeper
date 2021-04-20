@@ -11,6 +11,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"github.com/pkg/errors"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,14 +58,14 @@ func (m *AssignMetadataMutator) Matches(obj runtime.Object, ns *corev1.Namespace
 	return matches
 }
 
-func (m *AssignMetadataMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
+func (m *AssignMetadataMutator) Mutate(obj *unstructured.Unstructured, req *admissionv1.AdmissionRequest) (bool, error) {
 	t, err := tester.New([]tester.Test{
 		{SubPath: m.Path(), Condition: tester.MustNotExist},
 	})
 	if err != nil {
 		return false, err
 	}
-	return mutate(m, t, nil, obj)
+	return mutate(m, t, nil, obj, req)
 }
 func (m *AssignMetadataMutator) ID() types.ID {
 	return m.id
