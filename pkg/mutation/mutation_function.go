@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	path "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
@@ -28,7 +29,7 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 	if mutator.HasExternalData() != "" {
 		providerCache := mutator.GetExternalData()
 
-		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "cache", providerCache, "proxyURL", providerCache["quay"])
+		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "cache", providerCache)
 
 		resp = sendProviderRequest(providerCache["quay"], req)
 	}
@@ -39,12 +40,13 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 	return mutated, err
 }
 
-func sendProviderRequest(providerURL string, admissionReq *admissionv1.AdmissionRequest) string {
+func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) string {
 	out, _ := json.Marshal(admissionReq)
-    req, _ := http.NewRequest("POST", providerURL, bytes.NewBuffer(out))
+    req, _ := http.NewRequest("POST", provider.Spec.ProxyURL, bytes.NewBuffer(out))
     req.Header.Set("Content-Type", "application/json")
 
     client := &http.Client{}
+	// client := &http.Client{Timeout: time.Duration(provider.Spec.Timeout)}
     resp, err := client.Do(req)
     if err != nil {
         panic(err)

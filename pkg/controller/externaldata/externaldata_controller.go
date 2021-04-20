@@ -92,7 +92,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	log.Info("Reconcile", "request - externaldata", request)
+	log.Info("Reconcile", "request", request)
 
 	deleted := false
 	provider := &externaldatav1alpha1.Provider{}
@@ -123,15 +123,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		return ctrl.Result{}, err
 	}
 	if !deleted {
-		if err := r.providerCache.Upsert(provider.Name, provider.Spec.ProxyURL); err != nil {
+		if err := r.providerCache.Upsert(provider); err != nil {
 			log.Error(err, "Upsert failed", "resource", request.NamespacedName)
 			tracker.TryCancelExpect(provider)
 		} else {
 			tracker.Observe(provider)
 		}
 		log.Info("*** Upsert", "providerCache", r.providerCache.Cache)
-		test, _ := r.providerCache.Get(provider.Name)
-		log.Info("*** Upsert2", "providerCache.Get", test)
 	} else {
 		if err := r.providerCache.Remove(provider.Name); err != nil {
 			log.Error(err, "Remove failed", "resource", request.NamespacedName)

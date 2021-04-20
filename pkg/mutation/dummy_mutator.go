@@ -3,6 +3,7 @@ package mutation
 import (
 	"reflect"
 
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	path "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
@@ -72,6 +73,6 @@ func (d *dummyMutator) HasExternalData() string {
 	return ""
 }
 
-func (d *dummyMutator) GetExternalData() map[string]string {
+func (d *dummyMutator) GetExternalData() map[string]externaldatav1alpha1.Provider {
 	return nil
 }

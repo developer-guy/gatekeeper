@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/google/go-cmp/cmp"
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
@@ -43,7 +44,7 @@ type AssignMetadataMutator struct {
 	id             types.ID
 	assignMetadata *mutationsv1alpha1.AssignMetadata
 	path           *parser.Path
-	providerCache  map[string]string
+	providerCache  map[string]externaldatav1alpha1.Provider
 }
 
 // assignMetadataMutator implements mutator
@@ -96,7 +97,7 @@ func (m *AssignMetadataMutator) HasExternalData() string {
 	return m.assignMetadata.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMetadataMutator) GetExternalData() map[string]string {
+func (m *AssignMetadataMutator) GetExternalData() map[string]externaldatav1alpha1.Provider {
 	return m.providerCache
 }
 
@@ -129,7 +130,7 @@ func (m *AssignMetadataMutator) String() string {
 }
 
 // MutatorForAssignMetadata builds an AssignMetadataMutator from the given AssignMetadata object.
-func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache map[string]string) (*AssignMetadataMutator, error) {
+func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache map[string]externaldatav1alpha1.Provider) (*AssignMetadataMutator, error) {
 	path, err := parser.Parse(assignMeta.Spec.Location)
 	//log.Info("***", "path", path)
 

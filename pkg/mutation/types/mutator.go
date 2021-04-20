@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	"github.com/pkg/errors"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -37,7 +38,7 @@ type Mutator interface {
 	Path() *parser.Path
 	String() string
 	HasExternalData() string
-	GetExternalData() map[string]string
+	GetExternalData() map[string]externaldatav1alpha1.Provider
 }
 
 // MakeID builds an ID object for the given object

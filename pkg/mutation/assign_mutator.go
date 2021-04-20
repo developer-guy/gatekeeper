@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/google/go-cmp/cmp"
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	patht "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
@@ -27,7 +28,7 @@ type AssignMutator struct {
 	bindings      []schema.Binding
 	tester        *patht.Tester
 	valueTest     *mutationsv1alpha1.AssignIf
-	providerCache map[string]string
+	providerCache map[string]externaldatav1alpha1.Provider
 }
 
 // AssignMutator implements mutatorWithSchema
@@ -121,7 +122,7 @@ func (m *AssignMutator) HasExternalData() string {
 	return m.assign.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMutator) GetExternalData() map[string]string {
+func (m *AssignMutator) GetExternalData() map[string]externaldatav1alpha1.Provider {
 	return m.providerCache
 }
 
@@ -152,7 +153,7 @@ func (m *AssignMutator) String() string {
 
 // MutatorForAssign returns an AssignMutator built from
 // the given assign instance.
-func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache map[string]string) (*AssignMutator, error) {
+func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache map[string]externaldatav1alpha1.Provider) (*AssignMutator, error) {
 	path, err := parser.Parse(assign.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format `%s` for Assign %s", assign.Spec.Location, assign.GetName())
