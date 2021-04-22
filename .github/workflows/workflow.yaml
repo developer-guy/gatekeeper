@@ -212,6 +212,15 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v2
 
+      - name: Verify distroless base image
+        run: |
+          docker run gcr.io/projectsigstore/cosign:$COSIGN_VERSION &&\
+            verify &&\
+            -key https://raw.githubusercontent.com/GoogleContainerTools/distroless/main/cosign.pub &&\
+            gcr.io/distroless/static:nonroot
+        env:
+          COSIGN_VERSION: v0.3.1@sha256:c581a4f0f6dd158220fa05d2351d8015f969b68de5c61d52c41478fae84e7064
+
       - name: make docker-push-dev
         run: |
           tokenUri="https://auth.docker.io/token?service=registry.docker.io&scope=repository:${{ env.IMAGE_REPO }}:pull"
@@ -249,6 +258,13 @@ jobs:
         run: |
           echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           echo $TAG
+
+      - name: Verify distroless base image
+        run: |
+          docker run gcr.io/projectsigstore/cosign@sha256:c581a4f0f6dd158220fa05d2351d8015f969b68de5c61d52c41478fae84e7064 &&\
+            verify &&\
+            -key https://raw.githubusercontent.com/GoogleContainerTools/distroless/main/cosign.pub &&\
+            gcr.io/distroless/static:nonroot
 
       - name: Publish release
         run: |
