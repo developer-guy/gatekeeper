@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-REPOSITORY ?= openpolicyagent/gatekeeper
+REPOSITORY ?= sozercan/gatekeeper
 
 IMG := $(REPOSITORY):latest
 # DEV_TAG will be replaced with short Git SHA on pre-release stage in CI
