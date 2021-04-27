@@ -25,38 +25,46 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 		return false, errors.New("attempting to mutate a nil object")
 	}
 
-	var resp string
-	if mutator.HasExternalData() != "" {
+	var resp *http.Response
+	var body []byte
+	var err error
+	if mutator.HasExternalData() {
 		providerCache := mutator.GetExternalData()
-
 		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "cache", providerCache)
-
-		resp = sendProviderRequest(providerCache, req)
+		resp, err = sendProviderRequest(providerCache, req)
+		if err != nil {
+			log.Error(err, "invalid response from provider")
+		}
+		if resp.StatusCode == 200 {
+			body, err = ioutil.ReadAll(resp.Body)
+			log.Info("*** BODY", "body", string(body))
+			if err != nil {
+				log.Error(err, "unable to read response body")
+			}
+		}
 	}
 
 	//log.Info("***", "mutator", mutator, "id", mutator.ID())
 	//log.Info("***", "obj.Object", obj.Object)
-	mutated, _, err := s.mutateInternal(obj.Object, 0, resp)
+	mutated, _, err := s.mutateInternal(obj.Object, 0, string(body))
 	return mutated, err
 }
 
-func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) string {
+func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) (*http.Response, error) {
 	out, _ := json.Marshal(admissionReq)
-    req, _ := http.NewRequest("POST", provider.Spec.ProxyURL, bytes.NewBuffer(out))
-    req.Header.Set("Content-Type", "application/json")
+	req, _ := http.NewRequest("POST", provider.Spec.ProxyURL, bytes.NewBuffer(out))
+	req.Header.Set("Content-Type", "application/json")
 
-    client := &http.Client{}
+	client := &http.Client{}
+	// TODO process timeout
 	// client := &http.Client{Timeout: time.Duration(provider.Spec.Timeout)}
-    resp, err := client.Do(req)
-    if err != nil {
-        panic(err)
-    }
-    defer resp.Body.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		return &http.Response{}, err
+	}
+	defer resp.Body.Close()
 
-    body, _ := ioutil.ReadAll(resp.Body)
-	log.Info("*** BODY", "body", string(body))
-
-	return string(body)
+	return resp, nil
 }
 
 type mutatorState struct {

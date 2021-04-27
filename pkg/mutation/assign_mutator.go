@@ -118,8 +118,11 @@ func (m *AssignMutator) HasDiff(mutator types.Mutator) bool {
 	return false
 }
 
-func (m *AssignMutator) HasExternalData() string {
-	return m.assign.Spec.Parameters.ExternalData.Provider
+func (m *AssignMutator) HasExternalData() bool {
+	if m.assign.Spec.Parameters.ExternalData.Provider != "" {
+		return true
+	}
+	return false
 }
 
 func (m *AssignMutator) GetExternalData() externaldatav1alpha1.Provider {
@@ -138,7 +141,7 @@ func (m *AssignMutator) DeepCopy() types.Mutator {
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
 		providerCache: m.providerCache,
-		bindings: make([]schema.Binding, len(m.bindings)),
+		bindings:      make([]schema.Binding, len(m.bindings)),
 	}
 	copy(res.path.Nodes, m.path.Nodes)
 	copy(res.bindings, m.bindings)

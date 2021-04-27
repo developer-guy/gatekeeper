@@ -93,8 +93,11 @@ func (m *AssignMetadataMutator) HasDiff(mutator types.Mutator) bool {
 	return false
 }
 
-func (m *AssignMetadataMutator) HasExternalData() string {
-	return m.assignMetadata.Spec.Parameters.ExternalData.Provider
+func (m *AssignMetadataMutator) HasExternalData() bool {
+	if m.assignMetadata.Spec.Parameters.ExternalData.Provider != "" {
+		return true
+	}
+	return false
 }
 
 func (m *AssignMetadataMutator) GetExternalData() externaldatav1alpha1.Provider {
