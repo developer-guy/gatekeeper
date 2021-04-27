@@ -45,7 +45,7 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 
 func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) (string, error) {
 	out, _ := json.Marshal(admissionReq)
-	req, _ := http.NewRequest("POST", provider.Spec.ProxyURL, bytes.NewBuffer(out))
+	req, _ := http.NewRequest("GET", provider.Spec.ProxyURL, bytes.NewBuffer(out))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
