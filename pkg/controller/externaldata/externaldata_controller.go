@@ -5,7 +5,7 @@ import (
 
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
-	"github.com/open-policy-agent/gatekeeper/pkg/externaldata"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/readiness"
@@ -127,22 +127,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		return ctrl.Result{}, err
 	}
 	if !deleted {
-		if err := r.opa.AddExternalData(ctx, provider); err != nil {
-			return reconcile.Result{}, err
-		}
 		if err := r.providerCache.Upsert(provider); err != nil {
 			log.Error(err, "Upsert failed", "resource", request.NamespacedName)
 			tracker.TryCancelExpect(provider)
 		} else {
 			tracker.Observe(provider)
 		}
-		log.Info("*** Upsert", "providerCache", r.providerCache.Cache)
+
+		debugGet, _ := r.providerCache.Get("quay")
+		log.Info("*** Upsert", "providerCache", debugGet)
 	} else {
 		if err := r.providerCache.Remove(provider.Name); err != nil {
 			log.Error(err, "Remove failed", "resource", request.NamespacedName)
 		}
 		tracker.CancelExpect(provider)
-		log.Info("*** Remove", "providerCache", r.providerCache.Cache)
+
+		debugGet, _ := r.providerCache.Get("quay")
+		log.Info("*** Remove", "providerCache", debugGet)
 	}
 
 	return ctrl.Result{}, nil

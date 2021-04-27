@@ -31,7 +31,7 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 
 		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "cache", providerCache)
 
-		resp = sendProviderRequest(providerCache["quay"], req)
+		resp = sendProviderRequest(providerCache, req)
 	}
 
 	//log.Info("***", "mutator", mutator, "id", mutator.ID())

@@ -27,6 +27,7 @@ import (
 	"github.com/open-policy-agent/cert-controller/pkg/rotator"
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	api "github.com/open-policy-agent/gatekeeper/apis"
 	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
@@ -34,7 +35,6 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/audit"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
-	"github.com/open-policy-agent/gatekeeper/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/operations"
@@ -231,8 +231,10 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	// Block until the setup (certificate generation) finishes.
 	<-setupFinished
 
+	providerCache := externaldata.NewCache()
+
 	// initialize OPA
-	driver := local.New(local.Tracing(false))
+	driver := local.New(providerCache, local.Tracing(false))
 	backend, err := opa.NewBackend(opa.Driver(driver))
 	if err != nil {
 		setupLog.Error(err, "unable to set up OPA backend")
@@ -244,8 +246,6 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	}
 
 	mutationCache := mutation.NewSystem()
-
-	providerCache := externaldata.NewCache()
 
 	c := mgr.GetCache()
 	dc, ok := c.(watch.RemovableCache)

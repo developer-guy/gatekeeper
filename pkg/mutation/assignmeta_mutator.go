@@ -44,7 +44,7 @@ type AssignMetadataMutator struct {
 	id             types.ID
 	assignMetadata *mutationsv1alpha1.AssignMetadata
 	path           *parser.Path
-	providerCache  map[string]externaldatav1alpha1.Provider
+	providerCache  externaldatav1alpha1.Provider
 }
 
 // assignMetadataMutator implements mutator
@@ -97,7 +97,7 @@ func (m *AssignMetadataMutator) HasExternalData() string {
 	return m.assignMetadata.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMetadataMutator) GetExternalData() map[string]externaldatav1alpha1.Provider {
+func (m *AssignMetadataMutator) GetExternalData() externaldatav1alpha1.Provider {
 	return m.providerCache
 }
 
@@ -130,7 +130,7 @@ func (m *AssignMetadataMutator) String() string {
 }
 
 // MutatorForAssignMetadata builds an AssignMetadataMutator from the given AssignMetadata object.
-func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache map[string]externaldatav1alpha1.Provider) (*AssignMetadataMutator, error) {
+func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache externaldatav1alpha1.Provider) (*AssignMetadataMutator, error) {
 	path, err := parser.Parse(assignMeta.Spec.Location)
 	//log.Info("***", "path", path)
 
@@ -192,7 +192,7 @@ func isValidMetadataPath(path *parser.Path) bool {
 // IsValidAssignMetadata returns an error if the given assignmetadata object is not
 // semantically valid
 func IsValidAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) error {
-	if _, err := MutatorForAssignMetadata(assignMeta, nil); err != nil {
+	if _, err := MutatorForAssignMetadata(assignMeta, externaldatav1alpha1.Provider{}); err != nil {
 		return err
 	}
 	return nil

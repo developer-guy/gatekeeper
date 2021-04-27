@@ -10,17 +10,16 @@ import (
 	"strings"
 	"sync"
 
-	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/types"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/rego"
-	opatypes "github.com/open-policy-agent/opa/types"
 	"github.com/open-policy-agent/opa/storage"
 	"github.com/open-policy-agent/opa/storage/inmem"
 	"github.com/open-policy-agent/opa/topdown"
+	opatypes "github.com/open-policy-agent/opa/types"
 	"github.com/pkg/errors"
-
 )
 
 const moduleSetPrefix = "__modset_"
@@ -70,13 +69,13 @@ func DisableBuiltins(builtins ...string) Arg {
 	}
 }
 
-func New(args ...Arg) drivers.Driver {
+func New(providerCache *externaldata.ProviderCache, args ...Arg, ) drivers.Driver {
 	d := &driver{
-		compiler: ast.NewCompiler(),
-		modules:  make(map[string]*ast.Module),
-		storage:  inmem.New(),
-		capabilities: ast.CapabilitiesForThisVersion(),
-		externalDataSources: make(map[string]*externaldatav1alpha1.Provider),
+		compiler:      ast.NewCompiler(),
+		modules:       make(map[string]*ast.Module),
+		storage:       inmem.New(),
+		capabilities:  ast.CapabilitiesForThisVersion(),
+		providerCache: providerCache,
 	}
 	for _, arg := range args {
 		arg(d)
@@ -89,13 +88,13 @@ func New(args ...Arg) drivers.Driver {
 var _ drivers.Driver = &driver{}
 
 type driver struct {
-	modulesMux   sync.RWMutex
-	compiler     *ast.Compiler
-	modules      map[string]*ast.Module
-	storage      storage.Store
-	capabilities *ast.Capabilities
-	traceEnabled bool
-	externalDataSources  map[string]*externaldatav1alpha1.Provider
+	modulesMux    sync.RWMutex
+	compiler      *ast.Compiler
+	modules       map[string]*ast.Module
+	storage       storage.Store
+	capabilities  *ast.Capabilities
+	traceEnabled  bool
+	providerCache *externaldata.ProviderCache
 }
 
 func (d *driver) Init(ctx context.Context) error {
@@ -106,23 +105,21 @@ func (d *driver) Init(ctx context.Context) error {
 			Memoize: true,
 		},
 		func(bctx rego.BuiltinContext, a, b *ast.Term) (*ast.Term, error) {
-			var ed, input string
+			var providerName, input string
 
-			if err := ast.As(a.Value, &ed); err != nil {
+			if err := ast.As(a.Value, &providerName); err != nil {
 				return nil, err
 			}
 			if err := ast.As(b.Value, &input); err != nil {
 				return nil, err
 			}
 
-			//result = fmt.Sprintf("input: %v, external datasource len: %v", input, len(d.externalDataSources))
+			cache, err := d.providerCache.Get(providerName)
+			if err != nil {
+				return nil, fmt.Errorf("unable to retrieve provider %v cache", providerName)
 
-			data, ok := d.externalDataSources[ed]; 
-			if !ok {
-				return nil, fmt.Errorf("external datasource %v not found", ed)
 			}
-
-			req, err := http.NewRequest("GET", fmt.Sprintf(data.Spec.ProxyURL, url.QueryEscape(input)), nil)
+			req, err := http.NewRequest("GET", fmt.Sprintf(cache.Spec.ProxyURL, url.QueryEscape(input)), nil)
 			if err != nil {
 				return nil, err
 			}
@@ -144,8 +141,6 @@ func (d *driver) Init(ctx context.Context) error {
 			}
 
 			return ast.NewTerm(v), nil
-
-			//return ast.StringTerm(result), nil
 		},
 	)
 	return nil
@@ -318,13 +313,6 @@ func parsePath(path string) ([]string, error) {
 		return nil, fmt.Errorf("Bad data path: %s", path)
 	}
 	return p, nil
-}
-func (d *driver) AddExternalData(ctx context.Context, key string, data *externaldatav1alpha1.Provider) error {
-	d.modulesMux.RLock()
-	defer d.modulesMux.RUnlock()
-
-	d.externalDataSources[key] = data
-	return nil
 }
 
 func (d *driver) PutData(ctx context.Context, path string, data interface{}) error {

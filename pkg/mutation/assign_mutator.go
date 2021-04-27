@@ -28,7 +28,7 @@ type AssignMutator struct {
 	bindings      []schema.Binding
 	tester        *patht.Tester
 	valueTest     *mutationsv1alpha1.AssignIf
-	providerCache map[string]externaldatav1alpha1.Provider
+	providerCache externaldatav1alpha1.Provider
 }
 
 // AssignMutator implements mutatorWithSchema
@@ -122,7 +122,7 @@ func (m *AssignMutator) HasExternalData() string {
 	return m.assign.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMutator) GetExternalData() map[string]externaldatav1alpha1.Provider {
+func (m *AssignMutator) GetExternalData() externaldatav1alpha1.Provider {
 	return m.providerCache
 }
 
@@ -153,7 +153,7 @@ func (m *AssignMutator) String() string {
 
 // MutatorForAssign returns an AssignMutator built from
 // the given assign instance.
-func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache map[string]externaldatav1alpha1.Provider) (*AssignMutator, error) {
+func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache externaldatav1alpha1.Provider) (*AssignMutator, error) {
 	path, err := parser.Parse(assign.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format `%s` for Assign %s", assign.Spec.Location, assign.GetName())
@@ -264,7 +264,7 @@ func applyToToBindings(applyTos []mutationsv1alpha1.ApplyTo) []schema.Binding {
 // IsValidAssign returns an error if the given assign object is not
 // semantically valid
 func IsValidAssign(assign *mutationsv1alpha1.Assign) error {
-	if _, err := MutatorForAssign(assign, nil); err != nil {
+	if _, err := MutatorForAssign(assign, externaldatav1alpha1.Provider{}); err != nil {
 		return err
 	}
 	return nil

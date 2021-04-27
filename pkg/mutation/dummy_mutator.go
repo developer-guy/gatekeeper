@@ -73,6 +73,6 @@ func (d *dummyMutator) HasExternalData() string {
 	return ""
 }
 
-func (d *dummyMutator) GetExternalData() map[string]externaldatav1alpha1.Provider {
-	return nil
+func (d *dummyMutator) GetExternalData() externaldatav1alpha1.Provider {
+	return externaldatav1alpha1.Provider{}
 }
