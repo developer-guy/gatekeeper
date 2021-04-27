@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
@@ -30,10 +31,10 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 	providerName := mutator.GetExternalDataProvider()
 	if providerName != "" {
 		providerCache := mutator.GetExternalDataCache(providerName)
-		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "providerName", providerName, "cache", providerCache)
+		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "providerName", providerName, "proxyURL", providerCache.Spec.ProxyURL)
 		resp, err = sendProviderRequest(*providerCache, req)
 		if err != nil {
-			log.Error(err, "invalid response from provider")
+			log.Error(err, "error while sending request to provider")
 		}
 	}
 
@@ -44,13 +45,18 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 }
 
 func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) (string, error) {
-	out, _ := json.Marshal(admissionReq)
-	req, _ := http.NewRequest("GET", provider.Spec.ProxyURL, bytes.NewBuffer(out))
+	out, err := json.Marshal(admissionReq)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest("GET", provider.Spec.ProxyURL, bytes.NewBuffer(out))
+	if err != nil {
+		return "", err
+	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	// TODO process timeout
-	// client := &http.Client{Timeout: time.Duration(provider.Spec.Timeout)}
+	timeout := time.Second * time.Duration(provider.Spec.Timeout)
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
