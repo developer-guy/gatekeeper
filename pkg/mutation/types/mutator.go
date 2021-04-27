@@ -37,8 +37,8 @@ type Mutator interface {
 	Value() (interface{}, error)
 	Path() *parser.Path
 	String() string
-	HasExternalData() bool
-	GetExternalData() externaldatav1alpha1.Provider
+	GetExternalDataProvider() string
+	GetExternalDataCache(name string) *externaldatav1alpha1.Provider
 }
 
 // MakeID builds an ID object for the given object

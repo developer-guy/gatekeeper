@@ -18,11 +18,11 @@ func NewCache() *ProviderCache {
 	}
 }
 
-func (c *ProviderCache) Get(key string) (v1alpha1.Provider, error) {
+func (c *ProviderCache) Get(key string) (*v1alpha1.Provider, error) {
 	if v, ok := c.cache[key]; ok {
-		return v, nil
+		return &v, nil
 	}
-	return v1alpha1.Provider{}, fmt.Errorf("key is not found in cache")
+	return &v1alpha1.Provider{}, fmt.Errorf("key is not found in cache")
 }
 
 func (c *ProviderCache) Upsert(provider *v1alpha1.Provider) error {

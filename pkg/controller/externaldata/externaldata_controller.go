@@ -133,17 +133,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		} else {
 			tracker.Observe(provider)
 		}
-
-		debugGet, _ := r.providerCache.Get("quay")
-		log.Info("*** Upsert", "providerCache", debugGet)
 	} else {
 		if err := r.providerCache.Remove(provider.Name); err != nil {
 			log.Error(err, "Remove failed", "resource", request.NamespacedName)
 		}
 		tracker.CancelExpect(provider)
-
-		debugGet, _ := r.providerCache.Get("quay")
-		log.Info("*** Remove", "providerCache", debugGet)
 	}
 
 	return ctrl.Result{}, nil

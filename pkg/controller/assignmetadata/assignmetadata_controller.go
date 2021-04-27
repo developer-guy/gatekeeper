@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
@@ -160,15 +159,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	var providerCache v1alpha1.Provider
-	if assignMetadata.Spec.Parameters.ExternalData.Provider != "" {
-		providerCache, err = r.providerCache.Get(assignMetadata.Spec.Parameters.ExternalData.Provider)
-		if err != nil {
-			log.Error(err, "failed to retreieve provider cache")
-			return reconcile.Result{}, err
-		}
-	}
-	mutator, err := mutation.MutatorForAssignMetadata(assignMetadata, providerCache)
+	mutator, err := mutation.MutatorForAssignMetadata(assignMetadata, r.providerCache)
 	if err != nil {
 		log.Error(err, "Creating mutator for resource failed", "resource", request.NamespacedName)
 		tracker.CancelExpect(assignMetadata)

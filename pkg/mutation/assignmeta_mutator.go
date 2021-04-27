@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
@@ -44,7 +45,7 @@ type AssignMetadataMutator struct {
 	id             types.ID
 	assignMetadata *mutationsv1alpha1.AssignMetadata
 	path           *parser.Path
-	providerCache  externaldatav1alpha1.Provider
+	providerCache  *externaldata.ProviderCache
 }
 
 // assignMetadataMutator implements mutator
@@ -93,15 +94,13 @@ func (m *AssignMetadataMutator) HasDiff(mutator types.Mutator) bool {
 	return false
 }
 
-func (m *AssignMetadataMutator) HasExternalData() bool {
-	if m.assignMetadata.Spec.Parameters.ExternalData.Provider != "" {
-		return true
-	}
-	return false
+func (m *AssignMetadataMutator) GetExternalDataProvider() string {
+	return m.assignMetadata.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMetadataMutator) GetExternalData() externaldatav1alpha1.Provider {
-	return m.providerCache
+func (m *AssignMetadataMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
+	data, _ := m.providerCache.Get(name)
+	return data
 }
 
 func (m *AssignMetadataMutator) DeepCopy() types.Mutator {
@@ -133,7 +132,7 @@ func (m *AssignMetadataMutator) String() string {
 }
 
 // MutatorForAssignMetadata builds an AssignMetadataMutator from the given AssignMetadata object.
-func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache externaldatav1alpha1.Provider) (*AssignMetadataMutator, error) {
+func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache *externaldata.ProviderCache) (*AssignMetadataMutator, error) {
 	path, err := parser.Parse(assignMeta.Spec.Location)
 	//log.Info("***", "path", path)
 
@@ -195,7 +194,7 @@ func isValidMetadataPath(path *parser.Path) bool {
 // IsValidAssignMetadata returns an error if the given assignmetadata object is not
 // semantically valid
 func IsValidAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) error {
-	if _, err := MutatorForAssignMetadata(assignMeta, externaldatav1alpha1.Provider{}); err != nil {
+	if _, err := MutatorForAssignMetadata(assignMeta, &externaldata.ProviderCache{}); err != nil {
 		return err
 	}
 	return nil

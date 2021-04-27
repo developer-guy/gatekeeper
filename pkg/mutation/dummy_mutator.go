@@ -69,10 +69,10 @@ func newDummyMutator(name, path string, value interface{}) *dummyMutator {
 	return &dummyMutator{name: name, path: p, value: value}
 }
 
-func (d *dummyMutator) HasExternalData() bool {
-	return false
+func (d *dummyMutator) GetExternalDataProvider() string {
+	return ""
 }
 
-func (d *dummyMutator) GetExternalData() externaldatav1alpha1.Provider {
-	return externaldatav1alpha1.Provider{}
+func (d *dummyMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
+	return &externaldatav1alpha1.Provider{}
 }

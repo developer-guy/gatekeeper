@@ -25,32 +25,25 @@ func mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 		return false, errors.New("attempting to mutate a nil object")
 	}
 
-	var resp *http.Response
-	var body []byte
+	var resp string
 	var err error
-	if mutator.HasExternalData() {
-		providerCache := mutator.GetExternalData()
-		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "cache", providerCache)
-		resp, err = sendProviderRequest(providerCache, req)
+	providerName := mutator.GetExternalDataProvider()
+	if providerName != "" {
+		providerCache := mutator.GetExternalDataCache(providerName)
+		log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "providerName", providerName, "cache", providerCache)
+		resp, err = sendProviderRequest(*providerCache, req)
 		if err != nil {
 			log.Error(err, "invalid response from provider")
-		}
-		if resp.StatusCode == 200 {
-			body, err = ioutil.ReadAll(resp.Body)
-			log.Info("*** BODY", "body", string(body))
-			if err != nil {
-				log.Error(err, "unable to read response body")
-			}
 		}
 	}
 
 	//log.Info("***", "mutator", mutator, "id", mutator.ID())
 	//log.Info("***", "obj.Object", obj.Object)
-	mutated, _, err := s.mutateInternal(obj.Object, 0, string(body))
+	mutated, _, err := s.mutateInternal(obj.Object, 0, resp)
 	return mutated, err
 }
 
-func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) (*http.Response, error) {
+func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *admissionv1.AdmissionRequest) (string, error) {
 	out, _ := json.Marshal(admissionReq)
 	req, _ := http.NewRequest("POST", provider.Spec.ProxyURL, bytes.NewBuffer(out))
 	req.Header.Set("Content-Type", "application/json")
@@ -60,11 +53,20 @@ func sendProviderRequest(provider externaldatav1alpha1.Provider, admissionReq *a
 	// client := &http.Client{Timeout: time.Duration(provider.Spec.Timeout)}
 	resp, err := client.Do(req)
 	if err != nil {
-		return &http.Response{}, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	return resp, nil
+	var body []byte
+	if resp.StatusCode == 200 {
+		body, err = ioutil.ReadAll(resp.Body)
+		log.Info("*** BODY", "body", string(body))
+		if err != nil {
+			log.Error(err, "unable to read response body")
+		}
+	}
+
+	return string(body), nil
 }
 
 type mutatorState struct {

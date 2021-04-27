@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	patht "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
@@ -28,7 +29,7 @@ type AssignMutator struct {
 	bindings      []schema.Binding
 	tester        *patht.Tester
 	valueTest     *mutationsv1alpha1.AssignIf
-	providerCache externaldatav1alpha1.Provider
+	providerCache *externaldata.ProviderCache
 }
 
 // AssignMutator implements mutatorWithSchema
@@ -118,15 +119,13 @@ func (m *AssignMutator) HasDiff(mutator types.Mutator) bool {
 	return false
 }
 
-func (m *AssignMutator) HasExternalData() bool {
-	if m.assign.Spec.Parameters.ExternalData.Provider != "" {
-		return true
-	}
-	return false
+func (m *AssignMutator) GetExternalDataProvider() string {
+	return m.assign.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMutator) GetExternalData() externaldatav1alpha1.Provider {
-	return m.providerCache
+func (m *AssignMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
+	data, _ := m.providerCache.Get(name)
+	return data
 }
 
 func (m *AssignMutator) Path() *parser.Path {
@@ -156,7 +155,7 @@ func (m *AssignMutator) String() string {
 
 // MutatorForAssign returns an AssignMutator built from
 // the given assign instance.
-func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache externaldatav1alpha1.Provider) (*AssignMutator, error) {
+func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache *externaldata.ProviderCache) (*AssignMutator, error) {
 	path, err := parser.Parse(assign.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format `%s` for Assign %s", assign.Spec.Location, assign.GetName())
@@ -267,7 +266,7 @@ func applyToToBindings(applyTos []mutationsv1alpha1.ApplyTo) []schema.Binding {
 // IsValidAssign returns an error if the given assign object is not
 // semantically valid
 func IsValidAssign(assign *mutationsv1alpha1.Assign) error {
-	if _, err := MutatorForAssign(assign, externaldatav1alpha1.Provider{}); err != nil {
+	if _, err := MutatorForAssign(assign, &externaldata.ProviderCache{}); err != nil {
 		return err
 	}
 	return nil
