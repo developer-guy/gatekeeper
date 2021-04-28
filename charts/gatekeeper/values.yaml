@@ -1,5 +1,6 @@
 replicas: 3
 auditInterval: 60
+auditMatchKindOnly: false
 constraintViolationsLimit: 20
 auditFromCache: false
 disableValidatingWebhook: false
@@ -21,7 +22,7 @@ postInstall:
       pullSecrets: []
 image:
   repository: openpolicyagent/gatekeeper
-  release: v3.4.0
+  release: v3.5.0-beta.1
   pullPolicy: IfNotPresent
   pullSecrets: []
 podAnnotations:
@@ -68,3 +69,5 @@ audit:
 pdb:
   controllerManager:
     minAvailable: 1
+service: {}
+disabledBuiltins:
