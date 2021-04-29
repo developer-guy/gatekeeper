@@ -14,14 +14,14 @@ require (
 	github.com/onsi/gomega v1.10.2
 	github.com/open-policy-agent/cert-controller v0.1.1-0.20210129015139-6ff9721a1c47
 	github.com/open-policy-agent/frameworks/constraint v0.0.0-20210422220901-804ff2ee8b4f
-	github.com/open-policy-agent/opa v0.24.0
+	github.com/open-policy-agent/opa v0.28.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
 	go.opencensus.io v0.22.2
 	go.uber.org/zap v1.15.0
 	golang.org/x/net v0.0.0-20210119194325-5f4716e94777
-	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
-	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
+	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.19.2
 	k8s.io/apiextensions-apiserver v0.19.2
