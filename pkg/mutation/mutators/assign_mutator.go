@@ -6,6 +6,8 @@ import (
 	"reflect"
 
 	"github.com/google/go-cmp/cmp"
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
@@ -34,6 +36,7 @@ type AssignMutator struct {
 	bindings  []schema.Binding
 	tester    *patht.Tester
 	valueTest *mutationsv1alpha1.AssignIf
+	providerCache *externaldata.ProviderCache
 }
 
 // AssignMutator implements mutatorWithSchema
@@ -145,6 +148,15 @@ func (m *AssignMutator) DeepCopy() types.Mutator {
 
 func (m *AssignMutator) String() string {
 	return fmt.Sprintf("%s/%s/%s:%d", m.id.Kind, m.id.Namespace, m.id.Name, m.assign.GetGeneration())
+}
+
+func (m *AssignMutator) GetExternalDataProvider() string {
+	return m.assign.Spec.Parameters.ExternalData.Provider
+}
+
+func (m *AssignMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
+	data, _ := m.providerCache.Get(name)
+	return &data
 }
 
 // MutatorForAssign returns an AssignMutator built from

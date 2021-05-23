@@ -35,3 +35,5 @@ require (
 	sigs.k8s.io/controller-runtime v0.8.2
 	sigs.k8s.io/yaml v1.2.0
 )
+
+replace github.com/open-policy-agent/frameworks/constraint => github.com/sozercan/frameworks/constraint v0.0.0-20210426231825-20a47c6eb792

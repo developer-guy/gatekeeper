@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/open-policy-agent/gatekeeper/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	path "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
@@ -24,6 +25,23 @@ func Mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 	if obj == nil {
 		return false, errors.New("attempting to mutate a nil object")
 	}
+
+	var resp string
+	var err error
+	if *externaldata.ExternalDataEnabled {
+		providerName := mutator.GetExternalDataProvider()
+		if providerName != "" {
+			providerCache := mutator.GetExternalDataCache(providerName)
+			log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "providerName", providerName, "proxyURL", providerCache.Spec.ProxyURL)
+			// TODO handle maxRetry
+			resp, err = externaldata.SendProviderRequest(*providerCache, req)
+			if err != nil {
+				// TODO handle failurePolicy
+				log.Error(err, "error while sending request to provider")
+			}
+		}
+	}
+
 	mutated, _, err := s.mutateInternal(obj.Object, 0)
 	return mutated, err
 }

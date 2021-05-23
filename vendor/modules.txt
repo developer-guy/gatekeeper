@@ -52,7 +52,7 @@ github.com/gobwas/glob/syntax/ast
 github.com/gobwas/glob/syntax/lexer
 github.com/gobwas/glob/util/runes
 github.com/gobwas/glob/util/strings
-# github.com/gogo/protobuf v1.3.2
+# github.com/gogo/protobuf v1.3.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
@@ -149,9 +149,10 @@ github.com/onsi/gomega/types
 # github.com/open-policy-agent/cert-controller v0.2.0
 ## explicit
 github.com/open-policy-agent/cert-controller/pkg/rotator
-# github.com/open-policy-agent/frameworks/constraint v0.0.0-20210503204408-3f51770b2910
+# github.com/open-policy-agent/frameworks/constraint v0.0.0-20210503204408-3f51770b2910 => github.com/sozercan/frameworks/constraint v0.0.0-20210426231825-20a47c6eb792
 ## explicit
 github.com/open-policy-agent/frameworks/constraint/deploy
+github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1
 github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1alpha1
 github.com/open-policy-agent/frameworks/constraint/pkg/apis/templates/v1beta1
 github.com/open-policy-agent/frameworks/constraint/pkg/client
@@ -160,6 +161,7 @@ github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local
 github.com/open-policy-agent/frameworks/constraint/pkg/client/regolib
 github.com/open-policy-agent/frameworks/constraint/pkg/core/constraints
 github.com/open-policy-agent/frameworks/constraint/pkg/core/templates
+github.com/open-policy-agent/frameworks/constraint/pkg/externaldata
 github.com/open-policy-agent/frameworks/constraint/pkg/regorewriter
 github.com/open-policy-agent/frameworks/constraint/pkg/types
 # github.com/open-policy-agent/opa v0.24.0
@@ -285,7 +287,7 @@ golang.org/x/oauth2/jwt
 # golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 ## explicit
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.0.0-20210225134936-a50acf3fe073
+# golang.org/x/sys v0.0.0-20201119102817-f84b799fce68
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -622,7 +624,7 @@ k8s.io/component-base/version
 # k8s.io/klog/v2 v2.8.0
 ## explicit
 k8s.io/klog/v2
-# k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
+# k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/validation/errors
 k8s.io/kube-openapi/pkg/validation/spec
@@ -685,8 +687,9 @@ sigs.k8s.io/controller-runtime/pkg/webhook/admission
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/certwatcher
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
-# sigs.k8s.io/structured-merge-diff/v4 v4.1.0
+# sigs.k8s.io/structured-merge-diff/v4 v4.0.2
 sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.2.0
 ## explicit
 sigs.k8s.io/yaml
+# github.com/open-policy-agent/frameworks/constraint => github.com/sozercan/frameworks/constraint v0.0.0-20210426231825-20a47c6eb792

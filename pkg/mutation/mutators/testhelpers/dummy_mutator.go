@@ -3,6 +3,7 @@ package testhelpers
 import (
 	"reflect"
 
+	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/core"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
@@ -59,6 +60,15 @@ func (d *DummyMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
 func (d *DummyMutator) String() string {
 	return ""
 }
+
+func (d *DummyMutator) GetExternalDataProvider() string {
+	return ""
+}
+
+func (d *DummyMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
+	return &externaldatav1alpha1.Provider{}
+}
+
 
 func NewDummyMutator(name, path string, value interface{}) *DummyMutator {
 	p, err := parser.Parse(path)

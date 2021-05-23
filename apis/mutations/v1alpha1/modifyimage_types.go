@@ -22,23 +22,21 @@ import (
 )
 
 // AssignSpec defines the desired state of Assign
-type ModifyImageSpec struct {
-	ApplyTo    []match.ApplyTo `json:"applyTo,omitempty"`
-	Match      match.Match     `json:"match,omitempty"`
-	Location   string          `json:"location,omitempty"`
-	Parameters ModifyImageParameters      `json:"parameters,omitempty"`
+type ModifyImageTagToDigestSpec struct {
+	ApplyTo    []match.ApplyTo          `json:"applyTo,omitempty"`
+	Match      match.Match              `json:"match,omitempty"`
+	Location   string                   `json:"location,omitempty"`
+	Parameters ModifyImageTagToDigestParameters `json:"parameters,omitempty"`
 }
 
-type ModifyImageParameters struct {
+type ModifyImageTagToDigestParameters struct {
 	PathTests []PathTest `json:"pathTests,omitempty"`
 
 	// once https://github.com/kubernetes-sigs/controller-tools/pull/528
 	// is merged, we can use an actual object
 	AssignIf runtime.RawExtension `json:"assignIf,omitempty"`
 
-	// Assign.value holds the value to be assigned
-	// +kubebuilder:validation:XPreserveUnknownFields
-	Assign runtime.RawExtension `json:"assign,omitempty"`
+	ExternalData ExternalData `json:"externalData,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -47,23 +45,22 @@ type ModifyImageParameters struct {
 // +kubebuilder:subresource:status
 
 // Assign is the Schema for the assign API
-type ModifyImage struct {
+type ModifyImageTagToDigest struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ModifyImageSpec   `json:"spec,omitempty"`
+	Spec ModifyImageTagToDigestSpec `json:"spec,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // AssignList contains a list of Assign
-type ModifyImageList struct {
+type ModifyImageTagToDigestList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ModifyImage `json:"items"`
+	Items           []ModifyImageTagToDigest `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ModifyImage{}, &ModifyImageList{})
+	SchemeBuilder.Register(&ModifyImageTagToDigest{}, &ModifyImageTagToDigestList{})
 }
-

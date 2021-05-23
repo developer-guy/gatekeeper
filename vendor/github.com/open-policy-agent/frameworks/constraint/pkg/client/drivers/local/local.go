@@ -5,16 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/types"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/storage"
 	"github.com/open-policy-agent/opa/storage/inmem"
 	"github.com/open-policy-agent/opa/topdown"
+	opatypes "github.com/open-policy-agent/opa/types"
 	"github.com/pkg/errors"
 )
 
@@ -65,32 +69,80 @@ func DisableBuiltins(builtins ...string) Arg {
 	}
 }
 
-func New(args ...Arg) drivers.Driver {
+func New(providerCache *externaldata.ProviderCache, args ...Arg, ) drivers.Driver {
 	d := &driver{
-		compiler:     ast.NewCompiler(),
-		modules:      make(map[string]*ast.Module),
-		storage:      inmem.New(),
-		capabilities: ast.CapabilitiesForThisVersion(),
+		compiler:      ast.NewCompiler(),
+		modules:       make(map[string]*ast.Module),
+		storage:       inmem.New(),
+		capabilities:  ast.CapabilitiesForThisVersion(),
+		providerCache: providerCache,
 	}
 	for _, arg := range args {
 		arg(d)
 	}
-	d.compiler.WithCapabilities(d.capabilities)
+	/// TODO(ritazh): this is overriding the custom builtin somehow
+	//d.compiler.WithCapabilities(d.capabilities)
 	return d
 }
 
 var _ drivers.Driver = &driver{}
 
 type driver struct {
-	modulesMux   sync.RWMutex
-	compiler     *ast.Compiler
-	modules      map[string]*ast.Module
-	storage      storage.Store
-	capabilities *ast.Capabilities
-	traceEnabled bool
+	modulesMux    sync.RWMutex
+	compiler      *ast.Compiler
+	modules       map[string]*ast.Module
+	storage       storage.Store
+	capabilities  *ast.Capabilities
+	traceEnabled  bool
+	providerCache *externaldata.ProviderCache
 }
 
 func (d *driver) Init(ctx context.Context) error {
+	rego.RegisterBuiltin2(
+		&rego.Function{
+			Name:    "externaldata",
+			Decl:    opatypes.NewFunction(opatypes.Args(opatypes.S, opatypes.S), opatypes.A),
+			Memoize: true,
+		},
+		func(bctx rego.BuiltinContext, a, b *ast.Term) (*ast.Term, error) {
+			var providerName, input string
+
+			if err := ast.As(a.Value, &providerName); err != nil {
+				return nil, err
+			}
+			if err := ast.As(b.Value, &input); err != nil {
+				return nil, err
+			}
+
+			cache, err := d.providerCache.Get(providerName)
+			if err != nil {
+				return nil, fmt.Errorf("unable to retrieve provider %v cache", providerName)
+
+			}
+			req, err := http.NewRequest("GET", fmt.Sprintf(cache.Spec.ProxyURL, url.QueryEscape(input)), nil)
+			if err != nil {
+				return nil, err
+			}
+
+			resp, err := http.DefaultClient.Do(req.WithContext(bctx.Context))
+			if err != nil {
+				return nil, err
+			}
+
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf(resp.Status)
+			}
+
+			v, err := ast.ValueFromReader(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+
+			return ast.NewTerm(v), nil
+		},
+	)
 	return nil
 }
 
@@ -209,8 +261,9 @@ func (d *driver) alterModules(ctx context.Context, insert insertParam, remove []
 		}
 	}
 
-	c := ast.NewCompiler().WithPathConflictsCheck(storage.NonEmpty(ctx, d.storage, txn)).
-		WithCapabilities(d.capabilities)
+	c := ast.NewCompiler().WithPathConflictsCheck(storage.NonEmpty(ctx, d.storage, txn))
+	/// TODO(ritazh): this is overriding the custom builtin somehow
+	//.WithCapabilities(d.capabilities)
 	if c.Compile(updatedModules); c.Failed() {
 		d.storage.Abort(ctx, txn)
 		return 0, c.Errors

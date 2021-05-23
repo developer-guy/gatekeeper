@@ -151,7 +151,7 @@ func RegisterConversions(s *runtime.Scheme) error {
 func autoConvert_v1alpha1_ByPodStatus_To_templates_ByPodStatus(in *ByPodStatus, out *templates.ByPodStatus, s conversion.Scope) error {
 	out.ID = in.ID
 	out.ObservedGeneration = in.ObservedGeneration
-	out.Errors = *(*[]templates.CreateCRDError)(unsafe.Pointer(&in.Errors))
+	out.Errors = *(*[]*templates.CreateCRDError)(unsafe.Pointer(&in.Errors))
 	return nil
 }
 
@@ -163,7 +163,7 @@ func Convert_v1alpha1_ByPodStatus_To_templates_ByPodStatus(in *ByPodStatus, out 
 func autoConvert_templates_ByPodStatus_To_v1alpha1_ByPodStatus(in *templates.ByPodStatus, out *ByPodStatus, s conversion.Scope) error {
 	out.ID = in.ID
 	out.ObservedGeneration = in.ObservedGeneration
-	out.Errors = *(*[]CreateCRDError)(unsafe.Pointer(&in.Errors))
+	out.Errors = *(*[]*CreateCRDError)(unsafe.Pointer(&in.Errors))
 	return nil
 }
 
@@ -340,7 +340,7 @@ func Convert_templates_ConstraintTemplateSpec_To_v1alpha1_ConstraintTemplateSpec
 
 func autoConvert_v1alpha1_ConstraintTemplateStatus_To_templates_ConstraintTemplateStatus(in *ConstraintTemplateStatus, out *templates.ConstraintTemplateStatus, s conversion.Scope) error {
 	out.Created = in.Created
-	out.ByPod = *(*[]templates.ByPodStatus)(unsafe.Pointer(&in.ByPod))
+	out.ByPod = *(*[]*templates.ByPodStatus)(unsafe.Pointer(&in.ByPod))
 	return nil
 }
 
@@ -351,7 +351,7 @@ func Convert_v1alpha1_ConstraintTemplateStatus_To_templates_ConstraintTemplateSt
 
 func autoConvert_templates_ConstraintTemplateStatus_To_v1alpha1_ConstraintTemplateStatus(in *templates.ConstraintTemplateStatus, out *ConstraintTemplateStatus, s conversion.Scope) error {
 	out.Created = in.Created
-	out.ByPod = *(*[]ByPodStatus)(unsafe.Pointer(&in.ByPod))
+	out.ByPod = *(*[]*ByPodStatus)(unsafe.Pointer(&in.ByPod))
 	return nil
 }
 
@@ -434,9 +434,8 @@ func autoConvert_v1alpha1_Validation_To_templates_Validation(in *Validation, out
 	if in.OpenAPIV3Schema != nil {
 		in, out := &in.OpenAPIV3Schema, &out.OpenAPIV3Schema
 		*out = new(apiextensions.JSONSchemaProps)
-		// This was edited manually.  A bug in conversion-gen originally left a compilation error here.
-		// For more information see https://github.com/open-policy-agent/frameworks/issues/112
-		if err := v1beta1.Convert_v1beta1_JSONSchemaProps_To_apiextensions_JSONSchemaProps(*in, *out, s); err != nil {
+		// TODO: Inefficient conversion - can we improve it?
+		if err := s.Convert(*in, *out, 0); err != nil {
 			return err
 		}
 	} else {
@@ -454,7 +453,8 @@ func autoConvert_templates_Validation_To_v1alpha1_Validation(in *templates.Valid
 	if in.OpenAPIV3Schema != nil {
 		in, out := &in.OpenAPIV3Schema, &out.OpenAPIV3Schema
 		*out = new(v1beta1.JSONSchemaProps)
-		if err := v1beta1.Convert_apiextensions_JSONSchemaProps_To_v1beta1_JSONSchemaProps(*in, *out, s); err != nil {
+		// TODO: Inefficient conversion - can we improve it?
+		if err := s.Convert(*in, *out, 0); err != nil {
 			return err
 		}
 	} else {

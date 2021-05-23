@@ -10,10 +10,10 @@ metadata:
 spec:
   group: mutations.gatekeeper.sh
   names:
-    kind: Assign
-    listKind: AssignList
+    kind: ModifyImageTag
+    listKind: ModifyImageTagList
     plural: assign
-    singular: assign
+    singular: modifyimagetag
   scope: Cluster
   subresources:
     status: {}
@@ -33,7 +33,6 @@ spec:
           description: AssignSpec defines the desired state of Assign
           properties:
             applyTo:
-              description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster Important: Run "make" to regenerate code after modifying this file'
               items:
                 description: ApplyTo determines what GVKs items the mutation should apply to. Globs are not allowed.
                 properties:
@@ -166,40 +165,6 @@ spec:
                     type: object
                   type: array
               type: object
-          type: object
-        status:
-          description: AssignStatus defines the observed state of Assign
-          properties:
-            byPod:
-              items:
-                description: MutatorPodStatusStatus defines the observed state of MutatorPodStatus
-                properties:
-                  enforced:
-                    type: boolean
-                  errors:
-                    items:
-                      description: MutatorError represents a single error caught while adding a mutator to a system
-                      properties:
-                        message:
-                          type: string
-                      required:
-                      - message
-                      type: object
-                    type: array
-                  id:
-                    type: string
-                  mutatorUID:
-                    description: Storing the mutator UID allows us to detect drift, such as when a mutator has been recreated after its CRD was deleted out from under it, interrupting the watch
-                    type: string
-                  observedGeneration:
-                    format: int64
-                    type: integer
-                  operations:
-                    items:
-                      type: string
-                    type: array
-                type: object
-              type: array
           type: object
       type: object
   version: v1alpha1
