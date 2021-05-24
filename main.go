@@ -27,6 +27,7 @@ import (
 	"github.com/open-policy-agent/cert-controller/pkg/rotator"
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	api "github.com/open-policy-agent/gatekeeper/apis"
 	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
@@ -237,8 +238,10 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	// Block until the setup (certificate generation) finishes.
 	<-setupFinished
 
+	providerCache := externaldata.NewCache()
+
 	// initialize OPA
-	driver := local.New(local.Tracing(false), local.DisableBuiltins(disabledBuiltins.ToSlice()...))
+	driver := local.New(providerCache, local.Tracing(false), local.DisableBuiltins(disabledBuiltins.ToSlice()...))
 	backend, err := opa.NewBackend(opa.Driver(driver))
 	if err != nil {
 		setupLog.Error(err, "unable to set up OPA backend")
