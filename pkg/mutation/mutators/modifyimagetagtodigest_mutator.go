@@ -1,12 +1,12 @@
 package mutators
 
 import (
-	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/google/go-cmp/cmp"
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
-	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
+	frameworksexternaldata "github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/core"
@@ -20,8 +20,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// AssignMutator is a mutator object built out of a
-// Assign instance.
+var (
+	imageValidSubPath = []parser.Node{
+		&parser.Object{
+			Reference: "image",
+		},
+	}
+)
+
+// ModifyImageTagToDigestMutator is a mutator object built out of a
+// ModifyImageTagToDigest instance.
 type ModifyImageTagToDigestMutator struct {
 	id                     types.ID
 	modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest
@@ -29,7 +37,7 @@ type ModifyImageTagToDigestMutator struct {
 	bindings               []schema.Binding
 	tester                 *patht.Tester
 	valueTest              *mutationsv1alpha1.AssignIf
-	providerCache          *externaldata.ProviderCache
+	providerCache          *frameworksexternaldata.ProviderCache
 }
 
 // AssignMutator implements mutatorWithSchema
@@ -101,11 +109,11 @@ func (m *ModifyImageTagToDigestMutator) SchemaBindings() []schema.Binding {
 }
 
 func (m *ModifyImageTagToDigestMutator) Value() (interface{}, error) {
-	return types.UnmarshalValue(m.modifyImageTagToDigest.Spec.Parameters.Assign.Raw)
+	return nil, nil
 }
 
 func (m *ModifyImageTagToDigestMutator) HasDiff(mutator types.Mutator) bool {
-	toCheck, ok := mutator.(*AssignMutator)
+	toCheck, ok := mutator.(*ModifyImageTagToDigestMutator)
 	if !ok { // different types, different
 		return true
 	}
@@ -121,7 +129,7 @@ func (m *ModifyImageTagToDigestMutator) HasDiff(mutator types.Mutator) bool {
 	}
 
 	// any difference in spec may be enough
-	if !cmp.Equal(toCheck.assign.Spec, m.modifyImageTagToDigest.Spec) {
+	if !cmp.Equal(toCheck.modifyImageTagToDigest.Spec, m.modifyImageTagToDigest.Spec) {
 		return true
 	}
 
@@ -156,62 +164,24 @@ func (m *ModifyImageTagToDigestMutator) String() string {
 func MutatorForModifyImageTagToDigest(modifyImageTag *mutationsv1alpha1.ModifyImageTagToDigest) (*ModifyImageTagToDigestMutator, error) {
 	path, err := parser.Parse(modifyImageTag.Spec.Location)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid location format `%s` for Assign %s", modifyImageTag.Spec.Location, modifyImageTag.GetName())
+		return nil, errors.Wrapf(err, "invalid location format `%s` for ModifyImageTagToDigest %s", modifyImageTag.Spec.Location, modifyImageTag.GetName())
 	}
-
-	if hasMetadataRoot(path) {
-		return nil, errors.New(fmt.Sprintf("assign %s can't change metadata", modifyImageTag.GetName()))
-	}
-
-	err = checkKeyNotChanged(path, modifyImageTag.GetName())
-	if err != nil {
-		return nil, err
-	}
-
-	toAssign := make(map[string]interface{})
-	err = json.Unmarshal([]byte(modifyImageTag.Spec.Parameters.Assign.Raw), &toAssign)
-	if err != nil {
-		return nil, errors.Wrapf(err, "invalid format for parameters.assign %s for Assign %s", modifyImageTag.Spec.Parameters.Assign.Raw, modifyImageTag.GetName())
-	}
-
-	value, ok := toAssign["value"]
-	if !ok {
-		return nil, errors.New(fmt.Sprintf("spec.parameters.assign for Assign %s must have a value field", modifyImageTag.GetName()))
-	}
-
-	err = validateObjectAssignedToList(path, value, modifyImageTag.GetName())
-	if err != nil {
-		return nil, err
+	if !isValidImagePath(path) {
+		return nil, fmt.Errorf("invalid location for ModifyImageTagToDigest %s: %s", modifyImageTag.GetName(), modifyImageTag.Spec.Location)
 	}
 
 	id, err := types.MakeID(modifyImageTag)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to retrieve id for assign type")
+		return nil, errors.Wrap(err, "failed to retrieve id for ModifyImageTagToDigest type")
 	}
 
-	pathTests, err := gatherPathTests(modifyImageTag)
-	if err != nil {
-		return nil, err
-	}
-	err = patht.ValidatePathTests(path, pathTests)
-	if err != nil {
-		return nil, err
-	}
-	tester, err := patht.New(pathTests)
-	if err != nil {
-		return nil, err
-	}
-	valueTests, err := modifyImageTag.ValueTests()
-	if err != nil {
-		return nil, err
-	}
 	applyTos := applyToToBindings(modifyImageTag.Spec.ApplyTo)
 	if len(applyTos) == 0 {
 		return nil, fmt.Errorf("applyTo required for Assign mutator %s", modifyImageTag.GetName())
 	}
 	for _, applyTo := range applyTos {
 		if len(applyTo.Groups) == 0 || len(applyTo.Versions) == 0 || len(applyTo.Kinds) == 0 {
-			return nil, fmt.Errorf("invalid applyTo for Assign mutator %s, all of group, version and kind must be specified", modifyImageTag.GetName())
+			return nil, fmt.Errorf("invalid applyTo for ModifyImageTagToDigest mutator %s, all of group, version and kind must be specified", modifyImageTag.GetName())
 		}
 	}
 
@@ -219,7 +189,14 @@ func MutatorForModifyImageTagToDigest(modifyImageTag *mutationsv1alpha1.ModifyIm
 		id:        id,
 		bindings:  applyTos,
 		path:      path,
-		tester:    tester,
-		valueTest: &valueTests,
 	}, nil
+}
+
+
+// Verifies that the given path is a valid image
+func isValidImagePath(path *parser.Path) bool {
+	if reflect.DeepEqual(path.Nodes[len(path.Nodes)-1], imageValidSubPath) {
+		return true
+	}
+	return false
 }

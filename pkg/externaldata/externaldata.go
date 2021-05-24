@@ -26,5 +26,6 @@ var (
 )
 
 func init() {
-	ExternalDataEnabled = flag.Bool("enable-external-data", false, "(alpha) Enable external data feature")
+	// TODO(sertac): false by default
+	ExternalDataEnabled = flag.Bool("enable-external-data", true, "(alpha) Enable external data feature")
 }
