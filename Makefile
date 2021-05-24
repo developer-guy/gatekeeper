@@ -8,9 +8,9 @@ USE_LOCAL_IMG ?= false
 
 VERSION := v3.4.0
 
-KIND_VERSION ?= 0.10.0
+KIND_VERSION ?= 0.11.0
 # note: k8s version pinned since KIND image availability lags k8s releases
-KUBERNETES_VERSION ?= v1.20.2
+KUBERNETES_VERSION ?= 1.21.1
 KUSTOMIZE_VERSION ?= 3.8.8
 BATS_VERSION ?= 1.2.1
 BATS_TESTS_FILE ?= test/bats/test.bats
@@ -67,9 +67,6 @@ MANAGER_IMAGE_PATCH := "apiVersion: apps/v1\
 
 FRAMEWORK_PACKAGE := github.com/open-policy-agent/frameworks/constraint
 
-# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= crd:trivialVersions=true,crdVersions=v1beta1
-
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -100,15 +97,15 @@ e2e-bootstrap:
 	# Download and install kind
 	curl -L https://github.com/kubernetes-sigs/kind/releases/download/v${KIND_VERSION}/kind-linux-amd64 --output ${GITHUB_WORKSPACE}/bin/kind && chmod +x ${GITHUB_WORKSPACE}/bin/kind
 	# Download and install kubectl
-	curl -L https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kubectl -o ${GITHUB_WORKSPACE}/bin/kubectl && chmod +x ${GITHUB_WORKSPACE}/bin/kubectl
+	curl -L https://storage.googleapis.com/kubernetes-release/release/v${KUBERNETES_VERSION}/bin/linux/amd64/kubectl -o ${GITHUB_WORKSPACE}/bin/kubectl && chmod +x ${GITHUB_WORKSPACE}/bin/kubectl
 	# Download and install kustomize
 	curl -L https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz -o kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz && tar -zxvf kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz && chmod +x kustomize && mv kustomize ${GITHUB_WORKSPACE}/bin/kustomize
 	# Download and install bats
 	curl -sSLO https://github.com/bats-core/bats-core/archive/v${BATS_VERSION}.tar.gz && tar -zxvf v${BATS_VERSION}.tar.gz && bash bats-core-${BATS_VERSION}/install.sh ${GITHUB_WORKSPACE}
 	# Check for existing kind cluster
-	if [ $$(kind get clusters) ]; then kind delete cluster; fi
+	if [ $$(${GITHUB_WORKSPACE}/bin/kind get clusters) ]; then ${GITHUB_WORKSPACE}/bin/kind delete cluster; fi
 	# Create a new kind cluster
-	TERM=dumb kind create cluster --image kindest/node:${KUBERNETES_VERSION} --wait 5m
+	TERM=dumb ${GITHUB_WORKSPACE}/bin/kind create cluster --image kindest/node:v${KUBERNETES_VERSION} --wait 5m
 
 e2e-build-load-image: docker-buildx
 	kind load docker-image --name kind ${IMG}
@@ -175,7 +172,17 @@ deploy: patch-image manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: __controller-gen
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./apis/..." paths="./pkg/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) \
+		crd \
+		rbac:roleName=manager-role \
+		webhook \
+		paths="./apis/..." \
+		paths="./pkg/..." \
+		output:crd:artifacts:config=config/crd/bases
+	# As mutation CRDs are not ready to be included in our final gatekeeper.yaml, we leave them out of config/crd/kustomization.yaml.
+	# This makes these files unavailable to the helmify step below.  The solve for this was to copy the mutation CRDs into
+	# config/overlays/mutation_webhook/.  To maintain the generation pipeline, we do that copy step here.
+	cp config/crd/bases/mutations* config/overlays/mutation_webhook/
 	rm -rf manifest_staging
 	mkdir -p manifest_staging/deploy
 	mkdir -p manifest_staging/charts/gatekeeper
@@ -183,7 +190,7 @@ manifests: __controller-gen
 	docker run --rm -v $(shell pwd):/gatekeeper --entrypoint /usr/local/bin/kustomize line/kubectl-kustomize:${KUBECTL_KUSTOMIZE_VERSION} build /gatekeeper/cmd/build/helmify | go run cmd/build/helmify/*.go
 
 lint:
-	golangci-lint -v run --exclude G108 ./... --timeout 5m
+	golangci-lint -v run ./... --timeout 5m
 
 # Generate code
 generate: __controller-gen target-template-source
@@ -295,3 +302,4 @@ __tooling-image:
 .PHONY: vendor
 vendor:
 	go mod vendor
+	go mod tidy

@@ -15,7 +15,7 @@ require (
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
 	github.com/open-policy-agent/cert-controller v0.2.0
-	github.com/open-policy-agent/frameworks/constraint v0.0.0-20210503204408-3f51770b2910
+	github.com/open-policy-agent/frameworks/constraint v0.0.0-20210518223409-ecad1fe8ed8d
 	github.com/open-policy-agent/opa v0.24.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
@@ -36,4 +36,4 @@ require (
 	sigs.k8s.io/yaml v1.2.0
 )
 
-replace github.com/open-policy-agent/frameworks/constraint => github.com/sozercan/frameworks/constraint v0.0.0-20210426231825-20a47c6eb792
+replace github.com/open-policy-agent/frameworks/constraint => github.com/sozercan/frameworks/constraint v0.0.0-20210524002404-c702dee6a969
