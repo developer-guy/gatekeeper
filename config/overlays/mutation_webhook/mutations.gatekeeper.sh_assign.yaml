@@ -10,10 +10,10 @@ metadata:
 spec:
   group: mutations.gatekeeper.sh
   names:
-    kind: ModifyImageTagToDigest
-    listKind: ModifyImageTagToDigestList
+    kind: Assign
+    listKind: AssignList
     plural: assign
-    singular: modifyimagetagtodigest
+    singular: assign
   scope: Cluster
   versions:
   - name: v1alpha1
@@ -33,6 +33,7 @@ spec:
             description: AssignSpec defines the desired state of Assign
             properties:
               applyTo:
+                description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster Important: Run "make" to regenerate code after modifying this file'
                 items:
                   description: ApplyTo determines what GVKs items the mutation should apply to. Globs are not allowed.
                   properties:
@@ -144,6 +145,10 @@ spec:
                 type: object
               parameters:
                 properties:
+                  assign:
+                    description: Assign.value holds the value to be assigned
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
                   assignIf:
                     description: once https://github.com/kubernetes-sigs/controller-tools/pull/528 is merged, we can use an actual object
                     type: object
@@ -169,6 +174,40 @@ spec:
                       type: object
                     type: array
                 type: object
+            type: object
+          status:
+            description: AssignStatus defines the observed state of Assign
+            properties:
+              byPod:
+                items:
+                  description: MutatorPodStatusStatus defines the observed state of MutatorPodStatus
+                  properties:
+                    enforced:
+                      type: boolean
+                    errors:
+                      items:
+                        description: MutatorError represents a single error caught while adding a mutator to a system
+                        properties:
+                          message:
+                            type: string
+                        required:
+                        - message
+                        type: object
+                      type: array
+                    id:
+                      type: string
+                    mutatorUID:
+                      description: Storing the mutator UID allows us to detect drift, such as when a mutator has been recreated after its CRD was deleted out from under it, interrupting the watch
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      type: integer
+                    operations:
+                      items:
+                        type: string
+                      type: array
+                  type: object
+                type: array
             type: object
         type: object
     served: true

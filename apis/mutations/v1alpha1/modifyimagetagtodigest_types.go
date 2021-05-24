@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// AssignSpec defines the desired state of Assign
+// ModifyImageTagToDigestSpec defines the desired state of ModifyImageTagToDigest
 type ModifyImageTagToDigestSpec struct {
 	ApplyTo    []match.ApplyTo          `json:"applyTo,omitempty"`
 	Match      match.Match              `json:"match,omitempty"`
@@ -40,11 +40,11 @@ type ModifyImageTagToDigestParameters struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path="assign"
+// +kubebuilder:resource:path="modifyimagetagtodigest"
 // +kubebuilder:resource:scope="Cluster"
 // +kubebuilder:subresource:status
 
-// Assign is the Schema for the assign API
+// ModifyImageTagToDigest is the Schema for the ModifyImageTagToDigest API
 type ModifyImageTagToDigest struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -54,7 +54,7 @@ type ModifyImageTagToDigest struct {
 
 // +kubebuilder:object:root=true
 
-// AssignList contains a list of Assign
+// ModifyImageTagToDigestList contains a list of ModifyImageTagToDigest
 type ModifyImageTagToDigestList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
