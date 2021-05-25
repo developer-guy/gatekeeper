@@ -32,7 +32,7 @@ type ModifyImageTagToDigestMutator struct {
 	providerCache          *frameworksexternaldata.ProviderCache
 }
 
-// AssignMutator implements mutatorWithSchema
+// ModifyImageTagToDigestMutator implements mutatorWithSchema
 var _ schema.MutatorWithSchema = &ModifyImageTagToDigestMutator{}
 
 func (m *ModifyImageTagToDigestMutator) GetExternalDataProvider() string {
@@ -151,36 +151,37 @@ func (m *ModifyImageTagToDigestMutator) String() string {
 	return fmt.Sprintf("%s/%s/%s:%d", m.id.Kind, m.id.Namespace, m.id.Name, m.modifyImageTagToDigest.GetGeneration())
 }
 
-// MutatorForAssign returns an AssignMutator built from
-// the given assign instance.
-func MutatorForModifyImageTagToDigest(modifyImageTag *mutationsv1alpha1.ModifyImageTagToDigest) (*ModifyImageTagToDigestMutator, error) {
-	path, err := parser.Parse(modifyImageTag.Spec.Location)
+// MutatorForModifyImageTagToDigest returns an MutatorForModifyImageTagToDigestMutator built from
+// the given ModifyImageTagToDigest instance.
+func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest) (*ModifyImageTagToDigestMutator, error) {
+	path, err := parser.Parse(modifyImageTagToDigest.Spec.Location)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid location format `%s` for ModifyImageTagToDigest %s", modifyImageTag.Spec.Location, modifyImageTag.GetName())
+		return nil, errors.Wrapf(err, "invalid location format `%s` for ModifyImageTagToDigest %s", modifyImageTagToDigest.Spec.Location, modifyImageTagToDigest.GetName())
 	}
 	if !isValidImagePath(path) {
-		return nil, fmt.Errorf("invalid location for ModifyImageTagToDigest %s: %s", modifyImageTag.GetName(), modifyImageTag.Spec.Location)
+		return nil, fmt.Errorf("invalid location for ModifyImageTagToDigest %s: %s", modifyImageTagToDigest.GetName(), modifyImageTagToDigest.Spec.Location)
 	}
 
-	id, err := types.MakeID(modifyImageTag)
+	id, err := types.MakeID(modifyImageTagToDigest)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve id for ModifyImageTagToDigest type")
 	}
 
-	applyTos := applyToToBindings(modifyImageTag.Spec.ApplyTo)
+	applyTos := applyToToBindings(modifyImageTagToDigest.Spec.ApplyTo)
 	if len(applyTos) == 0 {
-		return nil, fmt.Errorf("applyTo required for Assign mutator %s", modifyImageTag.GetName())
+		return nil, fmt.Errorf("applyTo required for ModifyImageTagToDigest mutator %s", modifyImageTagToDigest.GetName())
 	}
 	for _, applyTo := range applyTos {
 		if len(applyTo.Groups) == 0 || len(applyTo.Versions) == 0 || len(applyTo.Kinds) == 0 {
-			return nil, fmt.Errorf("invalid applyTo for ModifyImageTagToDigest mutator %s, all of group, version and kind must be specified", modifyImageTag.GetName())
+			return nil, fmt.Errorf("invalid applyTo for ModifyImageTagToDigest mutator %s, all of group, version and kind must be specified", modifyImageTagToDigest.GetName())
 		}
 	}
 
 	return &ModifyImageTagToDigestMutator{
-		id:       id,
-		bindings: applyTos,
-		path:     path,
+		id:                     id,
+		modifyImageTagToDigest: modifyImageTagToDigest.DeepCopy(),
+		bindings:               applyTos,
+		path:                   path,
 	}, nil
 }
 
