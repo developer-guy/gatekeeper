@@ -20,14 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-var (
-	imageValidSubPath = []parser.Node{
-		&parser.Object{
-			Reference: "image",
-		},
-	}
-)
-
 // ModifyImageTagToDigestMutator is a mutator object built out of a
 // ModifyImageTagToDigest instance.
 type ModifyImageTagToDigestMutator struct {
@@ -58,7 +50,7 @@ func (m *ModifyImageTagToDigestMutator) Matches(obj runtime.Object, ns *corev1.N
 	}
 	matches, err := match.Matches(m.modifyImageTagToDigest.Spec.Match, obj, ns)
 	if err != nil {
-		log.Error(err, "AssignMutator.Matches failed", "assign", m.modifyImageTagToDigest.Name)
+		log.Error(err, "ModifyImageTagToDigestMutator.Matches failed", "modifyImageTagToDigest", m.modifyImageTagToDigest.Name)
 		return false
 	}
 	return matches
@@ -194,10 +186,7 @@ func MutatorForModifyImageTagToDigest(modifyImageTag *mutationsv1alpha1.ModifyIm
 
 // Verifies that the given path is a valid image
 func isValidImagePath(path *parser.Path) bool {
-	if reflect.DeepEqual(path.Nodes[len(path.Nodes)-1], imageValidSubPath) {
-		return true
-	}
-	return false
+	return reflect.DeepEqual(path.Nodes[len(path.Nodes)-1], &parser.Object{Reference: "image"})
 }
 
 // IsValidModifyImageTagToDigest returns an error if the given modifyimagetagtodigest object is not
