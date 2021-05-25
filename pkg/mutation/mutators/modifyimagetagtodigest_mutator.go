@@ -142,7 +142,7 @@ func (m *ModifyImageTagToDigestMutator) Path() *parser.Path {
 
 func (m *ModifyImageTagToDigestMutator) DeepCopy() types.Mutator {
 	res := &ModifyImageTagToDigestMutator{
-		id:     m.id,
+		id: m.id,
 		path: &parser.Path{
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
@@ -186,12 +186,11 @@ func MutatorForModifyImageTagToDigest(modifyImageTag *mutationsv1alpha1.ModifyIm
 	}
 
 	return &ModifyImageTagToDigestMutator{
-		id:        id,
-		bindings:  applyTos,
-		path:      path,
+		id:       id,
+		bindings: applyTos,
+		path:     path,
 	}, nil
 }
-
 
 // Verifies that the given path is a valid image
 func isValidImagePath(path *parser.Path) bool {
@@ -199,4 +198,13 @@ func isValidImagePath(path *parser.Path) bool {
 		return true
 	}
 	return false
+}
+
+// IsValidModifyImageTagToDigest returns an error if the given modifyimagetagtodigest object is not
+// semantically valid
+func IsValidModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest) error {
+	if _, err := MutatorForModifyImageTagToDigest(modifyImageTagToDigest); err != nil {
+		return err
+	}
+	return nil
 }

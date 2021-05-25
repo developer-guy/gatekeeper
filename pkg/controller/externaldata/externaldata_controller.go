@@ -64,7 +64,7 @@ func (a *Adder) Add(mgr manager.Manager) error {
 	return add(mgr, r)
 }
 
-// Reconciler reconciles a AssignMetadata object
+// Reconciler reconciles a ExternalData object
 type Reconciler struct {
 	client.Client
 	opa           *opa.Client

@@ -57,12 +57,13 @@ type Tracker struct {
 
 	lister Lister
 
-	templates      *objectTracker
-	config         *objectTracker
-	assignMetadata *objectTracker
-	assign         *objectTracker
-	constraints    *trackerMap
-	data           *trackerMap
+	templates              *objectTracker
+	config                 *objectTracker
+	assignMetadata         *objectTracker
+	assign                 *objectTracker
+	modifyImageTagToDigest *objectTracker
+	constraints            *trackerMap
+	data                   *trackerMap
 
 	ready              chan struct{}
 	constraintTrackers *syncutil.SingleRunner
@@ -90,6 +91,7 @@ func newTracker(lister Lister, mutationEnabled bool, fn objDataFactory) *Tracker
 	if mutationEnabled {
 		tracker.assignMetadata = newObjTracker(mutationv1alpha.GroupVersion.WithKind("AssignMetadata"), fn)
 		tracker.assign = newObjTracker(mutationv1alpha.GroupVersion.WithKind("Assign"), fn)
+		tracker.modifyImageTagToDigest = newObjTracker(mutationv1alpha.GroupVersion.WithKind("ModifyImageTagToDigest"), fn)
 	}
 	return &tracker
 }
@@ -118,6 +120,11 @@ func (t *Tracker) For(gvk schema.GroupVersionKind) Expectations {
 	case gvk.GroupVersion() == mutationv1alpha.GroupVersion && gvk.Kind == "Assign":
 		if t.mutationEnabled {
 			return t.assign
+		}
+		return noopExpectations{}
+	case gvk.GroupVersion() == mutationv1alpha.GroupVersion && gvk.Kind == "ModifyImageTagToDigest":
+		if t.mutationEnabled {
+			return t.modifyImageTagToDigest
 		}
 		return noopExpectations{}
 	}
@@ -183,11 +190,12 @@ func (t *Tracker) Satisfied(ctx context.Context) bool {
 	}
 
 	if t.mutationEnabled {
-		if !t.assignMetadata.Satisfied() || !t.assign.Satisfied() {
+		if !t.assignMetadata.Satisfied() || !t.assign.Satisfied() || !t.modifyImageTagToDigest.Satisfied() {
 			return false
 		}
 		log.V(1).Info("all expectations satisfied", "tracker", "assignMetadata")
 		log.V(1).Info("all expectations satisfied", "tracker", "assign")
+		log.V(1).Info("all expectations satisfied", "tracker", "modifyImageTagToDigest")
 	}
 
 	if !t.templates.Satisfied() {
@@ -234,6 +242,9 @@ func (t *Tracker) Run(ctx context.Context) error {
 		})
 		grp.Go(func() error {
 			return t.trackAssign(gctx)
+		})
+		grp.Go(func() error {
+			return t.trackModifyImageTagToDigest(gctx)
 		})
 	}
 	grp.Go(func() error {
@@ -444,6 +455,31 @@ func (t *Tracker) trackAssign(ctx context.Context) error {
 	for index := range assignList.Items {
 		log.V(1).Info("expecting Assign", "name", assignList.Items[index].GetName())
 		t.assign.Expect(&assignList.Items[index])
+	}
+	return nil
+}
+
+func (t *Tracker) trackModifyImageTagToDigest(ctx context.Context) error {
+	defer func() {
+		t.modifyImageTagToDigest.ExpectationsDone()
+		log.V(1).Info("ModifyImageTagToDigest expectations populated")
+		_ = t.constraintTrackers.Wait()
+	}()
+
+	if !t.mutationEnabled {
+		return nil
+	}
+
+	modifyImageTagToDigestList := &mutationv1alpha.ModifyImageTagToDigestList{}
+	lister := retryLister(t.lister, retryAll)
+	if err := lister.List(ctx, modifyImageTagToDigestList); err != nil {
+		return fmt.Errorf("listing ModifyImageTagToDigest: %w", err)
+	}
+	log.V(1).Info("setting expectations for ModifyImageTagToDigest", "ModifyImageTagToDigest Count", len(modifyImageTagToDigestList.Items))
+
+	for index := range modifyImageTagToDigestList.Items {
+		log.V(1).Info("expecting ModifyImageTagToDigest", "name", modifyImageTagToDigestList.Items[index].GetName())
+		t.modifyImageTagToDigest.Expect(&modifyImageTagToDigestList.Items[index])
 	}
 	return nil
 }
@@ -704,6 +740,7 @@ func (t *Tracker) statsPrinter(ctx context.Context) {
 		if t.mutationEnabled {
 			logUnsatisfiedAssignMetadata(t)
 			logUnsatisfiedAssign(t)
+			logUnsatisfiedModifyImageTagToDigest(t)
 		}
 	}
 }
@@ -717,6 +754,12 @@ func logUnsatisfiedAssignMetadata(t *Tracker) {
 func logUnsatisfiedAssign(t *Tracker) {
 	for _, amKey := range t.assign.unsatisfied() {
 		log.Info("unsatisfied Assign", "name", amKey.namespacedName)
+	}
+}
+
+func logUnsatisfiedModifyImageTagToDigest(t *Tracker) {
+	for _, amKey := range t.modifyImageTagToDigest.unsatisfied() {
+		log.Info("unsatisfied ModifyImageTagToDigest", "name", amKey.namespacedName)
 	}
 }
 

@@ -150,9 +150,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return err
 	}
-	return c.Watch(
+	err = c.Watch(
 		&source.Kind{Type: &mutationsv1alpha1.AssignMetadata{}},
 		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1alpha1", Kind: "AssignMetadata"})),
+	)
+	if err != nil {
+		return err
+	}
+	return c.Watch(
+		&source.Kind{Type: &mutationsv1alpha1.ModifyImageTagToDigest{}},
+		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFuncHardcodeGVK(schema.GroupVersionKind{Group: v1beta1.MutationsGroup, Version: "v1alpha1", Kind: "ModifyImageTagToDigest"})),
 	)
 }
 

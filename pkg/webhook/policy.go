@@ -325,6 +325,8 @@ func (h *validationHandler) validateGatekeeperResources(ctx context.Context, req
 		return h.validateAssignMetadata(ctx, req)
 	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "Assign":
 		return h.validateAssign(ctx, req)
+	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "ModifyImageTagToDigest":
+		return h.validateModifyImageTagToDigest(ctx, req)
 	}
 
 	return false, nil
@@ -386,7 +388,7 @@ func (h *validationHandler) validateAssignMetadata(ctx context.Context, req admi
 	}
 	assignMetadata, ok := obj.(*mutationsv1alpha1.AssignMetadata)
 	if !ok {
-		return false, fmt.Errorf("Deserialized object is not of type AssignMetadata")
+		return false, fmt.Errorf("deserialized object is not of type AssignMetadata")
 	}
 	err = mutators.IsValidAssignMetadata(assignMetadata)
 	if err != nil {
@@ -403,10 +405,28 @@ func (h *validationHandler) validateAssign(ctx context.Context, req admission.Re
 	}
 	assign, ok := obj.(*mutationsv1alpha1.Assign)
 	if !ok {
-		return false, fmt.Errorf("Deserialized object is not of type Assign")
+		return false, fmt.Errorf("deserialized object is not of type Assign")
 	}
 
 	err = mutators.IsValidAssign(assign)
+	if err != nil {
+		return true, err
+	}
+
+	return false, nil
+}
+
+func (h *validationHandler) validateModifyImageTagToDigest(ctx context.Context, req admission.Request) (bool, error) {
+	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, &mutationsv1alpha1.ModifyImageTagToDigest{})
+	if err != nil {
+		return false, err
+	}
+	modifyImageTagToDigest, ok := obj.(*mutationsv1alpha1.ModifyImageTagToDigest)
+	if !ok {
+		return false, fmt.Errorf("deserialized object is not of type ModifyImageTagToDigest")
+	}
+
+	err = mutators.IsValidModifyImageTagToDigest(modifyImageTagToDigest)
 	if err != nil {
 		return true, err
 	}
