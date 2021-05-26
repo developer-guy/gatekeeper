@@ -134,7 +134,8 @@ func (m *ModifyImageTagToDigestMutator) Path() *parser.Path {
 
 func (m *ModifyImageTagToDigestMutator) DeepCopy() types.Mutator {
 	res := &ModifyImageTagToDigestMutator{
-		id: m.id,
+		id:                     m.id,
+		modifyImageTagToDigest: m.modifyImageTagToDigest.DeepCopy(),
 		path: &parser.Path{
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
