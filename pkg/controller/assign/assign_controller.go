@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	statusv1beta1 "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/mutatorstatus"
@@ -60,12 +61,13 @@ type Adder struct {
 	MutationCache *mutation.System
 	Tracker       *readiness.Tracker
 	GetPod        func() (*corev1.Pod, error)
+	ProviderCache *externaldata.ProviderCache
 }
 
 // Add creates a new Assign Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func (a *Adder) Add(mgr manager.Manager) error {
-	r := newReconciler(mgr, a.MutationCache, a.Tracker, a.GetPod)
+	r := newReconciler(mgr, a.MutationCache, a.ProviderCache, a.Tracker, a.GetPod)
 	return add(mgr, r)
 }
 
@@ -87,14 +89,19 @@ func (a *Adder) InjectMutationCache(mutationCache *mutation.System) {
 	a.MutationCache = mutationCache
 }
 
+func (a *Adder) InjectProviderCache(providerCache *externaldata.ProviderCache) {
+	a.ProviderCache = providerCache
+}
+
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, mutationCache *mutation.System, tracker *readiness.Tracker, getPod func() (*corev1.Pod, error)) *Reconciler {
+func newReconciler(mgr manager.Manager, mutationCache *mutation.System, providerCache *externaldata.ProviderCache, tracker *readiness.Tracker, getPod func() (*corev1.Pod, error)) *Reconciler {
 	r := &Reconciler{
-		system:  mutationCache,
-		Client:  mgr.GetClient(),
-		tracker: tracker,
-		getPod:  getPod,
-		scheme:  mgr.GetScheme(),
+		system:        mutationCache,
+		Client:        mgr.GetClient(),
+		tracker:       tracker,
+		getPod:        getPod,
+		scheme:        mgr.GetScheme(),
+		providerCache: providerCache,
 	}
 	if getPod == nil {
 		r.getPod = r.defaultGetPod
@@ -135,10 +142,11 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 // Reconciler reconciles a Assign object
 type Reconciler struct {
 	client.Client
-	system  *mutation.System
-	tracker *readiness.Tracker
-	getPod  func() (*corev1.Pod, error)
-	scheme  *runtime.Scheme
+	system        *mutation.System
+	tracker       *readiness.Tracker
+	getPod        func() (*corev1.Pod, error)
+	scheme        *runtime.Scheme
+	providerCache *externaldata.ProviderCache
 }
 
 // +kubebuilder:rbac:groups=mutations.gatekeeper.sh,resources=*,verbs=get;list;watch;create;update;patch;delete
@@ -209,7 +217,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	status.Status.ObservedGeneration = assign.GetGeneration()
 	status.Status.Errors = nil
 
-	mutator, err := mutators.MutatorForAssign(assign)
+	mutator, err := mutators.MutatorForAssign(assign, r.providerCache)
 	if err != nil {
 		log.Error(err, "Creating mutator for resource failed", "resource", request.NamespacedName)
 		tracker.TryCancelExpect(assign)

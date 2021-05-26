@@ -283,6 +283,7 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 		Tracker:          tracker,
 		ProcessExcluder:  processExcluder,
 		MutationCache:    mutationCache,
+		ProviderCache:    providerCache,
 	}
 	if err := controller.AddToManager(mgr, opts); err != nil {
 		setupLog.Error(err, "unable to register controllers with the manager")

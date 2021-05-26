@@ -30,12 +30,12 @@ var (
 // AssignMutator is a mutator object built out of a
 // Assign instance.
 type AssignMutator struct {
-	id        types.ID
-	assign    *mutationsv1alpha1.Assign
-	path      *parser.Path
-	bindings  []schema.Binding
-	tester    *patht.Tester
-	valueTest *mutationsv1alpha1.AssignIf
+	id            types.ID
+	assign        *mutationsv1alpha1.Assign
+	path          *parser.Path
+	bindings      []schema.Binding
+	tester        *patht.Tester
+	valueTest     *mutationsv1alpha1.AssignIf
 	providerCache *externaldata.ProviderCache
 }
 
@@ -161,7 +161,7 @@ func (m *AssignMutator) GetExternalDataCache(name string) *externaldatav1alpha1.
 
 // MutatorForAssign returns an AssignMutator built from
 // the given assign instance.
-func MutatorForAssign(assign *mutationsv1alpha1.Assign) (*AssignMutator, error) {
+func MutatorForAssign(assign *mutationsv1alpha1.Assign, providerCache *externaldata.ProviderCache) (*AssignMutator, error) {
 	path, err := parser.Parse(assign.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format `%s` for Assign %s", assign.Spec.Location, assign.GetName())
@@ -224,12 +224,13 @@ func MutatorForAssign(assign *mutationsv1alpha1.Assign) (*AssignMutator, error) 
 	}
 
 	return &AssignMutator{
-		id:        id,
-		assign:    assign.DeepCopy(),
-		bindings:  applyTos,
-		path:      path,
-		tester:    tester,
-		valueTest: &valueTests,
+		id:            id,
+		assign:        assign.DeepCopy(),
+		bindings:      applyTos,
+		path:          path,
+		tester:        tester,
+		valueTest:     &valueTests,
+		providerCache: providerCache,
 	}, nil
 }
 
@@ -271,7 +272,7 @@ func applyToToBindings(applyTos []match.ApplyTo) []schema.Binding {
 // IsValidAssign returns an error if the given assign object is not
 // semantically valid
 func IsValidAssign(assign *mutationsv1alpha1.Assign) error {
-	if _, err := MutatorForAssign(assign); err != nil {
+	if _, err := MutatorForAssign(assign, &externaldata.ProviderCache{}); err != nil {
 		return err
 	}
 	return nil

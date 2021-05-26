@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
+	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	frameworksexternaldata "github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
@@ -139,7 +140,8 @@ func (m *ModifyImageTagToDigestMutator) DeepCopy() types.Mutator {
 		path: &parser.Path{
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
-		bindings: make([]schema.Binding, len(m.bindings)),
+		bindings:      make([]schema.Binding, len(m.bindings)),
+		providerCache: m.providerCache,
 	}
 	copy(res.path.Nodes, m.path.Nodes)
 	copy(res.bindings, m.bindings)
@@ -154,7 +156,7 @@ func (m *ModifyImageTagToDigestMutator) String() string {
 
 // MutatorForModifyImageTagToDigest returns an MutatorForModifyImageTagToDigestMutator built from
 // the given ModifyImageTagToDigest instance.
-func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest) (*ModifyImageTagToDigestMutator, error) {
+func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest, providerCache *externaldata.ProviderCache) (*ModifyImageTagToDigestMutator, error) {
 	path, err := parser.Parse(modifyImageTagToDigest.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format `%s` for ModifyImageTagToDigest %s", modifyImageTagToDigest.Spec.Location, modifyImageTagToDigest.GetName())
@@ -183,6 +185,7 @@ func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.
 		modifyImageTagToDigest: modifyImageTagToDigest.DeepCopy(),
 		bindings:               applyTos,
 		path:                   path,
+		providerCache:          providerCache,
 	}, nil
 }
 
@@ -194,7 +197,7 @@ func isValidImagePath(path *parser.Path) bool {
 // IsValidModifyImageTagToDigest returns an error if the given modifyimagetagtodigest object is not
 // semantically valid
 func IsValidModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest) error {
-	if _, err := MutatorForModifyImageTagToDigest(modifyImageTagToDigest); err != nil {
+	if _, err := MutatorForModifyImageTagToDigest(modifyImageTagToDigest, &externaldata.ProviderCache{}); err != nil {
 		return err
 	}
 	return nil

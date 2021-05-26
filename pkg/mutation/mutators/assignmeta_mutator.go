@@ -101,6 +101,7 @@ func (m *AssignMetadataMutator) DeepCopy() types.Mutator {
 		id:             m.id,
 		assignMetadata: m.assignMetadata.DeepCopy(),
 		path:           &p,
+		providerCache:  m.providerCache,
 	}
 	return res
 }
@@ -132,7 +133,7 @@ func (m *AssignMetadataMutator) GetExternalDataCache(name string) *externaldatav
 }
 
 // MutatorForAssignMetadata builds an AssignMetadataMutator from the given AssignMetadata object.
-func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) (*AssignMetadataMutator, error) {
+func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata, providerCache *externaldata.ProviderCache) (*AssignMetadataMutator, error) {
 	path, err := parser.Parse(assignMeta.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format for AssignMetadata %s: %s", assignMeta.GetName(), assignMeta.Spec.Location)
@@ -162,6 +163,7 @@ func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) (*As
 		id:             id,
 		assignMetadata: assignMeta.DeepCopy(),
 		path:           path,
+		providerCache:  providerCache,
 	}, nil
 }
 
@@ -188,7 +190,7 @@ func isValidMetadataPath(path *parser.Path) bool {
 // IsValidAssignMetadata returns an error if the given assignmetadata object is not
 // semantically valid
 func IsValidAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) error {
-	if _, err := MutatorForAssignMetadata(assignMeta); err != nil {
+	if _, err := MutatorForAssignMetadata(assignMeta, &externaldata.ProviderCache{}); err != nil {
 		return err
 	}
 	return nil
