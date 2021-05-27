@@ -12,6 +12,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/core"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
 	patht "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/schema"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
@@ -58,7 +59,14 @@ func (m *ModifyImageTagToDigestMutator) Matches(obj runtime.Object, ns *corev1.N
 }
 
 func (m *ModifyImageTagToDigestMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
-	return core.Mutate(m, m.tester, m.testValue, obj)
+	t, err := tester.New([]tester.Test{
+		{SubPath: m.Path(), Condition: tester.MustExist},
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return core.Mutate(m, t, m.testValue, obj)
 }
 
 // valueTest returns true if it is okay for the mutation func to override the value
@@ -170,6 +178,11 @@ func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.
 		return nil, errors.Wrap(err, "failed to retrieve id for ModifyImageTagToDigest type")
 	}
 
+	valueTests, err := modifyImageTagToDigest.ValueTests()
+	if err != nil {
+		return nil, err
+	}
+
 	applyTos := applyToToBindings(modifyImageTagToDigest.Spec.ApplyTo)
 	if len(applyTos) == 0 {
 		return nil, fmt.Errorf("applyTo required for ModifyImageTagToDigest mutator %s", modifyImageTagToDigest.GetName())
@@ -185,6 +198,7 @@ func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.
 		modifyImageTagToDigest: modifyImageTagToDigest.DeepCopy(),
 		bindings:               applyTos,
 		path:                   path,
+		valueTest:              &valueTests,
 		providerCache:          providerCache,
 	}, nil
 }
