@@ -11,6 +11,7 @@ require (
 	github.com/go-logr/zapr v0.2.0
 	github.com/go-openapi/spec v0.20.3 // indirect
 	github.com/google/go-cmp v0.5.2
+	github.com/google/uuid v1.1.2
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
@@ -19,7 +20,6 @@ require (
 	github.com/open-policy-agent/opa v0.24.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
-	github.com/stretchr/testify v1.7.0 // indirect
 	go.opencensus.io v0.22.3
 	go.uber.org/zap v1.15.0
 	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
@@ -32,7 +32,7 @@ require (
 	k8s.io/apimachinery v0.20.2
 	k8s.io/client-go v0.20.2
 	k8s.io/klog/v2 v2.8.0
-	sigs.k8s.io/controller-runtime v0.8.2
+	sigs.k8s.io/controller-runtime v0.8.3
 	sigs.k8s.io/yaml v1.2.0
 )
 
