@@ -47,7 +47,7 @@ func init() {
 	}
 }
 
-// TODO enable this once mutation is beta +kubebuilder:webhook:verbs=create;update,path=/v1/mutate,mutating=true,failurePolicy=ignore,groups=*,resources=*,versions=*,name=mutation.gatekeeper.sh
+// TODO enable this once mutation is beta +kubebuilder:webhook:verbs=create;update,path=/v1/mutate,mutating=true,failurePolicy=ignore,groups=*,resources=*,versions=*,name=mutation.gatekeeper.sh,sideEffects=None,admissionReviewVersions=v1;v1beta1,matchPolicy=Exact
 // TODO enable this once mutation is beta +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch;update
 
 // AddMutatingWebhook registers the mutating webhook server with the manager
@@ -114,7 +114,7 @@ func (h *mutationHandler) Handle(ctx context.Context, req admission.Request) adm
 		return admission.ValidationResponse(true, "Mutating only on create or update")
 	}
 
-	if h.isGatekeeperResource(ctx, req) {
+	if h.isGatekeeperResource(ctx, &req) {
 		return admission.ValidationResponse(true, "Not mutating gatekeeper resources")
 	}
 
@@ -128,7 +128,7 @@ func (h *mutationHandler) Handle(ctx context.Context, req admission.Request) adm
 	}()
 
 	// namespace is excluded from webhook using config
-	isExcludedNamespace, err := h.skipExcludedNamespace(req.AdmissionRequest, process.Mutation)
+	isExcludedNamespace, err := h.skipExcludedNamespace(&req.AdmissionRequest, process.Mutation)
 	if err != nil {
 		log.Error(err, "error while excluding namespace")
 	}
@@ -138,7 +138,7 @@ func (h *mutationHandler) Handle(ctx context.Context, req admission.Request) adm
 		return admission.ValidationResponse(true, "Namespace is set to be ignored by Gatekeeper config")
 	}
 
-	resp, err := h.mutateRequest(ctx, req)
+	resp, err := h.mutateRequest(ctx, &req)
 
 	if err != nil {
 		requestResponse = errorResponse
@@ -148,7 +148,7 @@ func (h *mutationHandler) Handle(ctx context.Context, req admission.Request) adm
 	return resp
 }
 
-func (h *mutationHandler) mutateRequest(ctx context.Context, req admission.Request) (admission.Response, error) {
+func (h *mutationHandler) mutateRequest(ctx context.Context, req *admission.Request) (admission.Response, error) {
 
 	ns := &corev1.Namespace{}
 

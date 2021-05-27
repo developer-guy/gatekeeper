@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Modified from the original source (available at
-// https://github.com/kubernetes-sigs/controller-runtime/tree/v0.7.0/pkg/cache)
+// https://github.com/kubernetes-sigs/controller-runtime/tree/v0.8.2/pkg/cache)
 
 package dynamiccache
 
@@ -171,7 +171,7 @@ func (ip *dynamicInformerCache) GetInformerNonBlocking(obj client.Object) (cache
 		return nil, err
 	}
 
-	// Use a cancelled context to signal non-blocking
+	// Use a canceled context to signal non-blocking
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

@@ -38,7 +38,7 @@ import (
 	"github.com/open-policy-agent/opa/ast"
 	errorpkg "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -210,7 +210,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// Watch for changes to Constraint CRDs
 	err = c.Watch(
-		&source.Kind{Type: &apiextensionsv1beta1.CustomResourceDefinition{}},
+		&source.Kind{Type: &apiextensionsv1.CustomResourceDefinition{}},
 		&handler.EnqueueRequestForOwner{
 			OwnerType:    &v1beta1.ConstraintTemplate{},
 			IsController: true,
@@ -295,6 +295,7 @@ func (r *ReconcileConstraintTemplate) Reconcile(ctx context.Context, request rec
 		} else {
 			result, err = r.handleDelete(ctUnversioned)
 			if err != nil {
+				log.Error(err, "deletion error")
 				logError(request.NamespacedName.Name)
 				r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
 				return reconcile.Result{}, err
@@ -315,15 +316,18 @@ func (r *ReconcileConstraintTemplate) Reconcile(ctx context.Context, request rec
 	status.Status.TemplateUID = ct.GetUID()
 	status.Status.ObservedGeneration = ct.GetGeneration()
 	status.Status.Errors = nil
+
 	unversionedCT := &templates.ConstraintTemplate{}
 	if err := r.scheme.Convert(ct, unversionedCT, nil); err != nil {
-		r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
 		log.Error(err, "conversion error")
+		r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
 		logError(request.NamespacedName.Name)
 		return reconcile.Result{}, err
 	}
+
 	unversionedProposedCRD, err := r.opa.CreateCRD(context.Background(), unversionedCT)
 	if err != nil {
+		log.Error(err, "CRD creation error")
 		r.tracker.TryCancelTemplate(unversionedCT) // Don't track templates that failed compilation
 		r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
 		var createErr *v1beta1.CreateCRDError
@@ -345,11 +349,11 @@ func (r *ReconcileConstraintTemplate) Reconcile(ctx context.Context, request rec
 		return reconcile.Result{}, nil
 	}
 
-	proposedCRD := &apiextensionsv1beta1.CustomResourceDefinition{}
+	proposedCRD := &apiextensionsv1.CustomResourceDefinition{}
 	if err := r.scheme.Convert(unversionedProposedCRD, proposedCRD, nil); err != nil {
+		log.Error(err, "CRD conversion error")
 		r.tracker.TryCancelTemplate(unversionedCT) // Don't track templates that failed compilation
 		r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
-		log.Error(err, "conversion error")
 		logError(request.NamespacedName.Name)
 		err := r.reportErrorOnCTStatus("conversion_error", "Could not convert from unversioned resource", status, err)
 		return reconcile.Result{}, err
@@ -359,7 +363,7 @@ func (r *ReconcileConstraintTemplate) Reconcile(ctx context.Context, request rec
 	namespace := unversionedProposedCRD.GetNamespace()
 	// Check if the constraint CRD already exists
 	action := updatedAction
-	currentCRD := &apiextensionsv1beta1.CustomResourceDefinition{}
+	currentCRD := &apiextensionsv1.CustomResourceDefinition{}
 	err = r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, currentCRD)
 	switch {
 	case err == nil:
@@ -370,6 +374,7 @@ func (r *ReconcileConstraintTemplate) Reconcile(ctx context.Context, request rec
 		currentCRD = nil
 
 	default:
+		log.Error(err, "client.Get CRD error")
 		logError(request.NamespacedName.Name)
 		r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
 		return reconcile.Result{}, err
@@ -377,6 +382,7 @@ func (r *ReconcileConstraintTemplate) Reconcile(ctx context.Context, request rec
 
 	result, err := r.handleUpdate(ct, unversionedCT, proposedCRD, currentCRD, status)
 	if err != nil {
+		log.Error(err, "update error")
 		logError(request.NamespacedName.Name)
 		r.metrics.registry.add(request.NamespacedName, metrics.ErrorStatus)
 	} else if !result.Requeue {
@@ -402,7 +408,7 @@ func (r *ReconcileConstraintTemplate) reportErrorOnCTStatus(code, message string
 func (r *ReconcileConstraintTemplate) handleUpdate(
 	ct *v1beta1.ConstraintTemplate,
 	unversionedCT *templates.ConstraintTemplate,
-	proposedCRD, currentCRD *apiextensionsv1beta1.CustomResourceDefinition,
+	proposedCRD, currentCRD *apiextensionsv1.CustomResourceDefinition,
 	status *statusv1beta1.ConstraintTemplatePodStatus,
 ) (reconcile.Result, error) {
 	name := proposedCRD.GetName()
@@ -432,7 +438,7 @@ func (r *ReconcileConstraintTemplate) handleUpdate(
 	t.Observe(unversionedCT)
 	log.Info("[readiness] observed ConstraintTemplate", "name", unversionedCT.GetName())
 
-	var newCRD *apiextensionsv1beta1.CustomResourceDefinition
+	var newCRD *apiextensionsv1.CustomResourceDefinition
 	if currentCRD == nil {
 		newCRD = proposedCRD.DeepCopy()
 	} else {
@@ -558,20 +564,14 @@ func (r *ReconcileConstraintTemplate) addWatch(kind schema.GroupVersionKind) err
 	if err := r.watcher.AddWatch(kind); err != nil {
 		return err
 	}
-	if err := r.statusWatcher.AddWatch(kind); err != nil {
-		return err
-	}
-	return nil
+	return r.statusWatcher.AddWatch(kind)
 }
 
 func (r *ReconcileConstraintTemplate) removeWatch(kind schema.GroupVersionKind) error {
 	if err := r.watcher.RemoveWatch(kind); err != nil {
 		return err
 	}
-	if err := r.statusWatcher.RemoveWatch(kind); err != nil {
-		return err
-	}
-	return nil
+	return r.statusWatcher.RemoveWatch(kind)
 }
 
 type action string

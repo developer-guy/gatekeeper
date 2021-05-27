@@ -33,11 +33,11 @@ teardown_file() {
   CLEAN_CMD="${CLEAN_CMD}; rm ${cert}"
   wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "get_ca_cert ${cert}"
 
-  kubectl run temp --image=tutum/curl -- tail -f /dev/null
+  kubectl run temp --image=curlimages/curl -- tail -f /dev/null
   kubectl wait --for=condition=Ready --timeout=60s pod temp
-  kubectl cp ${cert} temp:/cacert
+  kubectl cp ${cert} temp:/tmp/cacert
 
-  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl exec -it temp -- curl -f --cacert /cacert --connect-timeout 1 --max-time 2  https://gatekeeper-webhook-service.${GATEKEEPER_NAMESPACE}.svc:443/v1/admitlabel"
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl exec -it temp -- curl -f --cacert /tmp/cacert --connect-timeout 1 --max-time 2  https://gatekeeper-webhook-service.${GATEKEEPER_NAMESPACE}.svc:443/v1/admitlabel"
   kubectl delete pod temp
 }
 
@@ -149,7 +149,7 @@ teardown_file() {
 }
 
 @test "waiting for namespaces to be synced using metrics endpoint" {
-  kubectl run temp --image=tutum/curl -- tail -f /dev/null
+  kubectl run temp --image=curlimages/curl -- tail -f /dev/null
   kubectl wait --for=condition=Ready --timeout=60s pod temp
 
   num_namespaces=$(kubectl get ns -o json | jq '.items | length')
@@ -219,4 +219,13 @@ __required_labels_audit_test() {
 
   kubectl apply -n ${GATEKEEPER_NAMESPACE} -f ${BATS_TESTS_DIR}/sync_with_exclusion.yaml
   wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl create configmap should-succeed -n gatekeeper-excluded-namespace"
+}
+
+@test "disable http.send" {
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "kubectl apply -f ${BATS_TESTS_DIR}/templates/use_http_send_template.yaml"
+  wait_for_process ${WAIT_TIME} ${SLEEP_TIME} "constraint_enforced constrainttemplate k8sdenynamehttpsend"
+  run kubectl apply -f ${BATS_TESTS_DIR}/bad/bad_http_send.yaml
+  assert_failure
+  run kubectl get constrainttemplate/k8sdenynamehttpsend -o jsonpath="{.status}"
+  assert_match 'undefined function http.send' "${output}"
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/util"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -270,10 +270,10 @@ func (am *Manager) auditResources(
 		if _, ok := clusterAPIResources[gv]; !ok {
 			clusterAPIResources[gv] = make(map[string]bool)
 		}
-		for _, resource := range rl.APIResources {
-			for _, verb := range resource.Verbs {
+		for i := range rl.APIResources {
+			for _, verb := range rl.APIResources[i].Verbs {
 				if verb == "list" {
-					clusterAPIResources[gv][resource.Kind] = true
+					clusterAPIResources[gv][rl.APIResources[i].Kind] = true
 					break
 				}
 			}
@@ -439,7 +439,7 @@ func (am *Manager) Start(ctx context.Context) error {
 }
 
 func (am *Manager) ensureCRDExists(ctx context.Context) error {
-	crd := &apiextensionsv1beta1.CustomResourceDefinition{}
+	crd := &apiextensionsv1.CustomResourceDefinition{}
 	return am.client.Get(ctx, types.NamespacedName{Name: crdName}, crd)
 }
 
@@ -457,8 +457,8 @@ func (am *Manager) getAllConstraintKinds() ([]schema.GroupVersionKind, error) {
 	version := resourceGV[1]
 	// We have seen duplicate GVK entries on shifting to status client, remove them
 	unique := make(map[schema.GroupVersionKind]bool)
-	for _, i := range l.APIResources {
-		unique[schema.GroupVersionKind{Group: group, Version: version, Kind: i.Kind}] = true
+	for i := range l.APIResources {
+		unique[schema.GroupVersionKind{Group: group, Version: version, Kind: l.APIResources[i].Kind}] = true
 	}
 	var ret []schema.GroupVersionKind
 	for gvk := range unique {
@@ -557,7 +557,8 @@ func (ucloop *updateConstraintLoop) updateConstraintStatus(ctx context.Context, 
 	ucloop.log.Info("updating constraint status", "constraintName", constraintName)
 	// create constraint status violations
 	var statusViolations []interface{}
-	for _, ar := range auditResults {
+	for i := range auditResults {
+		ar := &auditResults[i] // avoid large shallow copy in range loop
 		// append statusViolations for this constraint until constraintViolationsLimit has reached
 		if uint(len(statusViolations)) < *constraintViolationsLimit {
 			msg := ar.message

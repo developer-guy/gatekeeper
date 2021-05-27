@@ -28,12 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const (
-	ConstraintNameLabel = "internal.gatekeeper.sh/constraint-name"
-	ConstraintKindLabel = "internal.gatekeeper.sh/constraint-kind"
-	PodLabel            = "internal.gatekeeper.sh/pod"
-	ConstraintsGroup    = "constraints.gatekeeper.sh"
-)
+// ConstraintsGroup is the API Group for Gatekeeper Constraints.
+const ConstraintsGroup = "constraints.gatekeeper.sh"
 
 // ConstraintPodStatusStatus defines the observed state of ConstraintPodStatus
 type ConstraintPodStatusStatus struct {

@@ -12,19 +12,22 @@ import (
 
 type Operation string
 
+// All defined Operations.
 const (
-	Audit   = Operation("audit")
-	Status  = Operation("status")
-	Webhook = Operation("webhook")
+	Audit          = Operation("audit")
+	Status         = Operation("status")
+	MutationStatus = Operation("mutation-status")
+	Webhook        = Operation("webhook")
 )
 
 var (
-	// allOperations is a list of all possible operations that can be assigned to
-	// a pod it is NOT intended to be mutated. It should be kept in alphabetical
-	// order so that it can be readily compared to the results from AssignedOperations
+	// allOperations is a list of all possible Operations that can be assigned to
+	// a pod. It is NOT intended to be mutated. It should be kept in alphabetical
+	// order so that it can be readily compared to the results from AssignedOperations.
 	allOperations = []Operation{
 		Audit,
 		Status,
+		MutationStatus,
 		Webhook,
 	}
 	operations = newOperationSet()
