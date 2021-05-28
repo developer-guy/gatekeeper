@@ -87,12 +87,9 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to Provider
-	if err = c.Watch(
+	return c.Watch(
 		&source.Kind{Type: &externaldatav1alpha1.Provider{}},
-		&handler.EnqueueRequestForObject{}); err != nil {
-		return err
-	}
-	return nil
+		&handler.EnqueueRequestForObject{})
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {

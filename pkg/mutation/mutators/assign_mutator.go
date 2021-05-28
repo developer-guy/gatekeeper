@@ -138,6 +138,7 @@ func (m *AssignMutator) DeepCopy() types.Mutator {
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
 		bindings: make([]schema.Binding, len(m.bindings)),
+		providerCache: m.providerCache,
 	}
 	copy(res.path.Nodes, m.path.Nodes)
 	copy(res.bindings, m.bindings)
@@ -154,9 +155,12 @@ func (m *AssignMutator) GetExternalDataProvider() string {
 	return m.assign.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
-	data, _ := m.providerCache.Get(name)
-	return &data
+func (m *AssignMutator) GetExternalDataCache(name string) (*externaldatav1alpha1.Provider, error) {
+	data, err := m.providerCache.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
 }
 
 // MutatorForAssign returns an AssignMutator built from

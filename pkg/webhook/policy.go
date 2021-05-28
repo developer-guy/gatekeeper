@@ -416,7 +416,7 @@ func (h *validationHandler) validateAssign(ctx context.Context, req *admission.R
 	return false, nil
 }
 
-func (h *validationHandler) validateModifyImageTagToDigest(ctx context.Context, req admission.Request) (bool, error) {
+func (h *validationHandler) validateModifyImageTagToDigest(ctx context.Context, req *admission.Request) (bool, error) {
 	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, &mutationsv1alpha1.ModifyImageTagToDigest{})
 	if err != nil {
 		return false, err

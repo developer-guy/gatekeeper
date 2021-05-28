@@ -37,7 +37,7 @@ type Mutator interface {
 	Path() *parser.Path
 	String() string
 	GetExternalDataProvider() string
-	GetExternalDataCache(name string) *externaldatav1alpha1.Provider
+	GetExternalDataCache(name string) (*externaldatav1alpha1.Provider, error)
 }
 
 // MakeID builds an ID object for the given object

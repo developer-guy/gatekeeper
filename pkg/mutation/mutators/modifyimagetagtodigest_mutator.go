@@ -41,9 +41,12 @@ func (m *ModifyImageTagToDigestMutator) GetExternalDataProvider() string {
 	return m.modifyImageTagToDigest.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *ModifyImageTagToDigestMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
-	data, _ := m.providerCache.Get(name)
-	return &data
+func (m *ModifyImageTagToDigestMutator) GetExternalDataCache(name string) (*externaldatav1alpha1.Provider, error) {
+	data, err := m.providerCache.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
 }
 
 func (m *ModifyImageTagToDigestMutator) Matches(obj runtime.Object, ns *corev1.Namespace) bool {

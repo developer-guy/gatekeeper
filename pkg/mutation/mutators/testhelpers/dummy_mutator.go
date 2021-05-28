@@ -65,8 +65,8 @@ func (d *DummyMutator) GetExternalDataProvider() string {
 	return ""
 }
 
-func (d *DummyMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
-	return &externaldatav1alpha1.Provider{}
+func (d *DummyMutator) GetExternalDataCache(name string) (*externaldatav1alpha1.Provider, error) {
+	return &externaldatav1alpha1.Provider{}, nil
 }
 
 

@@ -31,8 +31,13 @@ func Mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 	if *externaldata.ExternalDataEnabled {
 		providerName := mutator.GetExternalDataProvider()
 		if providerName != "" {
-			providerCache := mutator.GetExternalDataCache(providerName)
-			log.Info("*** HAS EXTERNAL DATA", "mutator", mutator.ID(), "providerName", providerName, "proxyURL", providerCache.Spec.ProxyURL)
+			log.Info("*** HAS EXTERNAL DATA1", "providerName", providerName)
+
+			providerCache, err := mutator.GetExternalDataCache(providerName)
+			log.Error(err, "failed to get external data provider cache")
+
+			log.Info("*** HAS EXTERNAL DATA2", "mutator", mutator.ID(), "proxyURL", providerCache.Spec.ProxyURL)
+
 			// TODO handle maxRetry
 			resp, err = externaldata.SendProviderRequest(*providerCache, obj)
 			if err != nil {

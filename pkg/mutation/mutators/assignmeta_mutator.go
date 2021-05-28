@@ -127,9 +127,12 @@ func (m *AssignMetadataMutator) GetExternalDataProvider() string {
 	return m.assignMetadata.Spec.Parameters.ExternalData.Provider
 }
 
-func (m *AssignMetadataMutator) GetExternalDataCache(name string) *externaldatav1alpha1.Provider {
-	data, _ := m.providerCache.Get(name)
-	return &data
+func (m *AssignMetadataMutator) GetExternalDataCache(name string) (*externaldatav1alpha1.Provider, error) {
+	data, err := m.providerCache.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	return &data, nil
 }
 
 // MutatorForAssignMetadata builds an AssignMetadataMutator from the given AssignMetadata object.
