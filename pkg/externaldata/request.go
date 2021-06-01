@@ -8,12 +8,11 @@ import (
 	"time"
 
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // admissionReq *admissionv1.AdmissionRequest
-func SendProviderRequest(provider externaldatav1alpha1.Provider, obj *unstructured.Unstructured) (string, error) {
-	out, err := json.Marshal(obj)
+func SendProviderRequest(provider externaldatav1alpha1.Provider, source interface{}) (string, error) {
+	out, err := json.Marshal(source)
 	if err != nil {
 		return "", err
 	}

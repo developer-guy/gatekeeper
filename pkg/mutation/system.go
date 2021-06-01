@@ -94,11 +94,16 @@ func (s *System) Mutate(obj *unstructured.Unstructured, ns *corev1.Namespace) (b
 		}
 	}
 
+	//responseCache := make(map[string]string)
+
 	for i := 0; i < maxIterations; i++ {
+		// log.Info("***", "SYSTEM", i, "len(s.orderedMutators)", len(s.orderedMutators))
 		appliedMutations := []types.Mutator{}
 		old := obj.DeepCopy()
+
 		for _, m := range s.orderedMutators {
 			if m.Matches(obj, ns) {
+				log.Info("***", "Matches", i)
 				mutated, err := m.Mutate(obj)
 				if mutated && (*MutationLoggingEnabled || *MutationAnnotationsEnabled) {
 					appliedMutations = append(appliedMutations, m)
@@ -154,11 +159,11 @@ func mutationAnnotations(obj *unstructured.Unstructured, allAppliedMutations [][
 
 	metadata, ok := obj.Object["metadata"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("Incorrect metadata type")
+		return fmt.Errorf("incorrect metadata type")
 	}
 	annotations, ok := metadata["annotations"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("Incorrect metadata type")
+		return fmt.Errorf("incorrect metadata type")
 	}
 	annotations["gatekeeper.sh/mutations"] = strings.Join(mutatorStrings, ", ")
 	annotations["gatekeeper.sh/mutation-id"] = mutationUUID
@@ -217,7 +222,7 @@ func (s *System) Remove(id types.ID) error {
 	// The map is expected to be in sync with the list, so if we don't find it
 	// we return an error.
 	if !found {
-		return fmt.Errorf("Failed to find mutator with ID %v on sorted list", id)
+		return fmt.Errorf("failed to find mutator with ID %v on sorted list", id)
 	}
 	copy(s.orderedMutators[i:], s.orderedMutators[i+1:])
 	s.orderedMutators[len(s.orderedMutators)-1] = nil

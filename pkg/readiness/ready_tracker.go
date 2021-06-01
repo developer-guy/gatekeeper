@@ -295,7 +295,7 @@ func (t *Tracker) Populated() bool {
 	mutationPopulated := true
 	if t.mutationEnabled {
 		// If !t.mutationEnabled and we call this, it yields a null pointer exception
-		mutationPopulated = t.assignMetadata.Populated() && t.assign.Populated()
+		mutationPopulated = t.assignMetadata.Populated() && t.assign.Populated() && t.modifyImageTagToDigest.Populated()
 	}
 	return t.templates.Populated() && t.config.Populated() && mutationPopulated && t.constraints.Populated() && t.data.Populated()
 }

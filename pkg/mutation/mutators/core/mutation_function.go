@@ -1,8 +1,10 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/open-policy-agent/gatekeeper/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
@@ -17,6 +19,13 @@ var (
 	log = logf.Log.WithName("mutation").WithValues(logging.Process, "mutation")
 )
 
+type Container struct {
+	Name  string `json:"name"`
+	Image string `json:"image"`
+}
+
+type Containers []Container
+
 func Mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface{}, bool) bool, obj *unstructured.Unstructured) (bool, error) {
 	s := &mutatorState{mutator: mutator, tester: tester, valueTest: valueTest}
 	if len(mutator.Path().Nodes) == 0 {
@@ -28,26 +37,63 @@ func Mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 
 	var resp string
 	var err error
-	if *externaldata.ExternalDataEnabled {
-		providerName := mutator.GetExternalDataProvider()
-		if providerName != "" {
-			log.Info("*** HAS EXTERNAL DATA1", "providerName", providerName)
 
-			providerCache, err := mutator.GetExternalDataCache(providerName)
-			log.Error(err, "failed to get external data provider cache")
+	var providerResponse Containers
+	if mutator.ID().Kind == "ModifyImageTagToDigest" && *externaldata.ExternalDataEnabled {
 
-			log.Info("*** HAS EXTERNAL DATA2", "mutator", mutator.ID(), "proxyURL", providerCache.Spec.ProxyURL)
+		containers, _, _ := unstructured.NestedFieldNoCopy(obj.Object, "spec", "containers")
+		containerList, _ := containers.([]interface{})
+		list := make([]Container, len(containerList))
 
-			// TODO handle maxRetry
-			resp, err = externaldata.SendProviderRequest(*providerCache, obj)
-			if err != nil {
-				// TODO handle failurePolicy
-				log.Error(err, "error while sending request to provider")
+		for i, con := range containerList {
+			conMap, _ := con.(map[string]interface{})
+			name, _, _ := unstructured.NestedString(conMap, "name")
+			image, _, _ := unstructured.NestedString(conMap, "image")
+
+			if strings.Contains(image, "sha256") {
+				continue
+			}
+
+			list[i].Name = name
+			list[i].Image = image
+		}
+
+
+		// TODO fix this
+		if list[0].Image != "" {
+
+			log.Info("***", "containerlist", list)
+
+			providerName := mutator.GetExternalDataProvider()
+			if providerName != "" {
+				log.Info("*** EDP", "providerName", providerName)
+
+				providerCache, err := mutator.GetExternalDataCache(providerName)
+				if err != nil {
+					log.Error(err, "failed to get external data provider cache")
+				}
+
+				log.Info("*** EDP", "mutator", mutator.ID(), "proxyURL", providerCache.Spec.ProxyURL)
+
+				// TODO handle maxRetry
+				resp, err = externaldata.SendProviderRequest(*providerCache, list)
+				if err != nil {
+					// TODO handle failurePolicy
+					log.Error(err, "error while sending request to provider")
+				}
+
+				log.Info("***", "PROVIDER RESPONSE:", resp)
+
+				err = json.Unmarshal([]byte(resp), &providerResponse)
+				if err != nil {
+					log.Error(err, "error while unmarshaling provider response")
+				}
+				log.Info("***", "providerResponse", providerResponse)
 			}
 		}
 	}
 
-	mutated, _, err := s.mutateInternal(obj.Object, 0, resp)
+	mutated, _, err := s.mutateInternal(obj.Object, 0, providerResponse)
 	return mutated, err
 }
 
@@ -61,7 +107,7 @@ type mutatorState struct {
 
 // mutateInternal mutates the resource recursively. It returns false if there has been no change
 // to any downstream objects in the tree, indicating that the mutation should not be persisted
-func (s *mutatorState) mutateInternal(current interface{}, depth int, providerResponse string) (bool, interface{}, error) {
+func (s *mutatorState) mutateInternal(current interface{}, depth int, providerResponse interface{}) (bool, interface{}, error) {
 	pathEntry := s.mutator.Path().Nodes[depth]
 	switch castPathEntry := pathEntry.(type) {
 	case *parser.Object:
@@ -79,8 +125,14 @@ func (s *mutatorState) mutateInternal(current interface{}, depth int, providerRe
 				return false, nil, nil
 			}
 		}
+
+		log.Info("***", "s.mutator.Path().Nodes", s.mutator.Path().Nodes, "len(len(s.mutator.Path().Nodes)", len(s.mutator.Path().Nodes), "depth", depth)
+
+
 		// we have hit the end of our path, this is the base case
 		if len(s.mutator.Path().Nodes)-1 == depth {
+
+
 			if s.valueTest != nil && !s.valueTest(next, exists) {
 				return false, nil, nil
 			}
@@ -88,14 +140,30 @@ func (s *mutatorState) mutateInternal(current interface{}, depth int, providerRe
 
 			var value interface{}
 			var err error
-			if providerResponse != "" {
-				value = providerResponse
+			if s.mutator.ID().Kind == "ModifyImageTagToDigest" && castPathEntry.Reference == "image" {
+				for _, pr := range providerResponse.(Containers) {
+					if pr.Name == currentAsObject["name"] {
+						log.Info("***", "currentAsObject[name]", currentAsObject["name"], "pr.Image", pr.Image)
+						value = pr.Image
+					}
+				}
 			} else {
 				value, err = s.mutator.Value()
 				if err != nil {
 					return false, nil, err
 				}
 			}
+
+
+			// var err error
+			// if providerResponse != "" {
+			// 	value = providerResponse
+			// } else {
+			// 	value, err = s.mutator.Value()
+			// 	if err != nil {
+			// 		return false, nil, err
+			// 	}
+			// }
 			log.Info("*** VALUE", "value", value)
 
 			currentAsObject[castPathEntry.Reference] = value
@@ -137,6 +205,7 @@ func (s *mutatorState) mutateInternal(current interface{}, depth int, providerRe
 		mutated := false
 		for _, listElement := range shallowCopy {
 			if glob {
+				log.Info("***", "GLOB", glob, "key", key, "shallowCopy", shallowCopy, "listElement", listElement)
 				m, _, err := s.mutateInternal(listElement, depth+1, providerResponse)
 				if err != nil {
 					return false, nil, err

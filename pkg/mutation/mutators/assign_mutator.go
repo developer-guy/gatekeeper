@@ -137,7 +137,7 @@ func (m *AssignMutator) DeepCopy() types.Mutator {
 		path: &parser.Path{
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
-		bindings: make([]schema.Binding, len(m.bindings)),
+		bindings:      make([]schema.Binding, len(m.bindings)),
 		providerCache: m.providerCache,
 	}
 	copy(res.path.Nodes, m.path.Nodes)
