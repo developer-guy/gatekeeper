@@ -17,6 +17,7 @@ package readiness_test
 
 import (
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
+	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -39,6 +40,14 @@ var postConstraints = []*unstructured.Unstructured{
 	makeConstraint("ingress-https-only", "K8sHttpsOnly"),
 }
 
+var testAssignMetadata = []*mutationsv1alpha1.AssignMetadata{
+	makeAssignMetadata("demo"),
+}
+
+var testAssign = []*mutationsv1alpha1.Assign{
+	makeAssign("demo"),
+}
+
 func makeTemplate(name string) *templates.ConstraintTemplate {
 	return &templates.ConstraintTemplate{
 		ObjectMeta: metav1.ObjectMeta{
@@ -53,4 +62,34 @@ func makeConstraint(name string, kind string) *unstructured.Unstructured {
 	u.SetKind(kind)
 	u.SetName(name)
 	return &u
+}
+
+func makeAssignMetadata(name string) *mutationsv1alpha1.AssignMetadata {
+	return &mutationsv1alpha1.AssignMetadata{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "mutations.gatekeeper.sh/v1alpha1",
+			Kind:       "AssignMetadata",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: mutationsv1alpha1.AssignMetadataSpec{
+			Location: "metadata.labels.demolabel",
+		},
+	}
+}
+
+func makeAssign(name string) *mutationsv1alpha1.Assign {
+	return &mutationsv1alpha1.Assign{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "mutations.gatekeeper.sh/v1alpha1",
+			Kind:       "Assign",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: mutationsv1alpha1.AssignSpec{
+			Location: "spec.dnsPolicy",
+		},
+	}
 }

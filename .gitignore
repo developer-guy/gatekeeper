@@ -1,5 +1,6 @@
-# Staging dirs
+# Staging and temporary dirs
 .staging/
+/.tmp
 
 # Binaries for programs and plugins
 *.exe
@@ -17,6 +18,7 @@ bin
 
 # Manager image patch file
 config/overlays/dev/manager_image_patch.yaml
+config/overlays/dev_mutation/manager_image_patch.yaml
 
 # Kubernetes Generated files - skip generated files, except for vendored files
 

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
 	"github.com/open-policy-agent/gatekeeper/pkg/readiness"
@@ -42,10 +43,11 @@ import (
 var log = logf.Log.WithName("controller").WithValues("metaKind", "Sync")
 
 type Adder struct {
-	Opa          OpaDataClient
-	Events       <-chan event.GenericEvent
-	MetricsCache *MetricsCache
-	Tracker      *readiness.Tracker
+	Opa             OpaDataClient
+	Events          <-chan event.GenericEvent
+	MetricsCache    *MetricsCache
+	Tracker         *readiness.Tracker
+	ProcessExcluder *process.Excluder
 }
 
 // Add creates a new Sync Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
@@ -57,7 +59,7 @@ func (a *Adder) Add(mgr manager.Manager) error {
 		return err
 	}
 
-	r, err := newReconciler(mgr, a.Opa, *reporter, a.MetricsCache, a.Tracker)
+	r, err := newReconciler(mgr, a.Opa, *reporter, a.MetricsCache, a.Tracker, a.ProcessExcluder)
 	if err != nil {
 		return err
 	}
@@ -70,16 +72,18 @@ func newReconciler(
 	opa OpaDataClient,
 	reporter Reporter,
 	metricsCache *MetricsCache,
-	tracker *readiness.Tracker) (reconcile.Reconciler, error) {
+	tracker *readiness.Tracker,
+	processExcluder *process.Excluder) (reconcile.Reconciler, error) {
 
 	return &ReconcileSync{
-		reader:       mgr.GetCache(),
-		scheme:       mgr.GetScheme(),
-		opa:          opa,
-		log:          log,
-		reporter:     reporter,
-		metricsCache: metricsCache,
-		tracker:      tracker,
+		reader:          mgr.GetCache(),
+		scheme:          mgr.GetScheme(),
+		opa:             opa,
+		log:             log,
+		reporter:        reporter,
+		metricsCache:    metricsCache,
+		tracker:         tracker,
+		processExcluder: processExcluder,
 	}, nil
 }
 
@@ -97,7 +101,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler, events <-chan event.Generi
 			Source:         events,
 			DestBufferSize: 1024,
 		},
-		&handler.EnqueueRequestsFromMapFunc{ToRequests: util.EventPacker{}},
+		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFunc()),
 	)
 }
 
@@ -118,20 +122,22 @@ type Tags struct {
 type ReconcileSync struct {
 	reader client.Reader
 
-	scheme       *runtime.Scheme
-	opa          OpaDataClient
-	log          logr.Logger
-	reporter     Reporter
-	metricsCache *MetricsCache
-	tracker      *readiness.Tracker
+	scheme          *runtime.Scheme
+	opa             OpaDataClient
+	log             logr.Logger
+	reporter        Reporter
+	metricsCache    *MetricsCache
+	tracker         *readiness.Tracker
+	processExcluder *process.Excluder
 }
 
 // +kubebuilder:rbac:groups=constraints.gatekeeper.sh,resources=*,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile reads that state of the cluster for an object and makes changes based on the state read
 // and what is in the constraint.Spec
-func (r *ReconcileSync) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+func (r *ReconcileSync) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	timeStart := time.Now()
+
 	gvk, unpackedRequest, err := util.UnpackRequest(request)
 	if err != nil {
 		// Unrecoverable, do not retry.
@@ -159,7 +165,7 @@ func (r *ReconcileSync) Reconcile(request reconcile.Request) (reconcile.Result, 
 	instance := &unstructured.Unstructured{}
 	instance.SetGroupVersionKind(gvk)
 
-	if err := r.reader.Get(context.TODO(), unpackedRequest.NamespacedName, instance); err != nil {
+	if err := r.reader.Get(ctx, unpackedRequest.NamespacedName, instance); err != nil {
 		if errors.IsNotFound(err) {
 			// This is a deletion; remove the data
 			instance.SetNamespace(unpackedRequest.Namespace)
@@ -167,6 +173,11 @@ func (r *ReconcileSync) Reconcile(request reconcile.Request) (reconcile.Result, 
 			if _, err := r.opa.RemoveData(context.Background(), instance); err != nil {
 				return reconcile.Result{}, err
 			}
+
+			// cancel expectations
+			t := r.tracker.ForData(instance.GroupVersionKind())
+			t.CancelExpect(instance)
+
 			r.metricsCache.DeleteObject(syncKey)
 			reportMetrics = true
 			return reconcile.Result{}, nil
@@ -175,10 +186,28 @@ func (r *ReconcileSync) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 
+	// namespace is excluded from sync
+	isExcludedNamespace, err := r.skipExcludedNamespace(instance)
+	if err != nil {
+		log.Error(err, "error while excluding namespaces")
+	}
+
+	if isExcludedNamespace {
+		// cancel expectations
+		t := r.tracker.ForData(instance.GroupVersionKind())
+		t.CancelExpect(instance)
+		return reconcile.Result{}, nil
+	}
+
 	if !instance.GetDeletionTimestamp().IsZero() {
 		if _, err := r.opa.RemoveData(context.Background(), instance); err != nil {
 			return reconcile.Result{}, err
 		}
+
+		// cancel expectations
+		t := r.tracker.ForData(instance.GroupVersionKind())
+		t.CancelExpect(instance)
+
 		r.metricsCache.DeleteObject(syncKey)
 		reportMetrics = true
 		return reconcile.Result{}, nil
@@ -214,6 +243,15 @@ func (r *ReconcileSync) Reconcile(request reconcile.Request) (reconcile.Result, 
 	reportMetrics = true
 
 	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileSync) skipExcludedNamespace(obj *unstructured.Unstructured) (bool, error) {
+	isNamespaceExcluded, err := r.processExcluder.IsNamespaceExcluded(process.Sync, obj)
+	if err != nil {
+		return false, err
+	}
+
+	return isNamespaceExcluded, err
 }
 
 func NewMetricsCache() *MetricsCache {

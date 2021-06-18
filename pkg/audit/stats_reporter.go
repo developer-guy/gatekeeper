@@ -19,10 +19,10 @@ const (
 )
 
 var (
-	violationsM        = stats.Int64(violationsMetricName, "Total number of violations", stats.UnitDimensionless)
+	violationsM    = stats.Int64(violationsMetricName, "Total number of audited violations", stats.UnitDimensionless)
 	violationsDetailsM = stats.Int64(violationsDetailsMetricName, "Number of audit runs seeing violations, per constraint", stats.UnitDimensionless)
-	auditDurationM     = stats.Float64(auditDurationMetricName, "Latency of audit operation in seconds", stats.UnitSeconds)
-	lastRunTimeM       = stats.Float64(lastRunTimeMetricName, "Timestamp of last audit run time", stats.UnitSeconds)
+	auditDurationM = stats.Float64(auditDurationMetricName, "Latency of audit operation in seconds", stats.UnitSeconds)
+	lastRunTimeM   = stats.Float64(lastRunTimeMetricName, "Timestamp of last audit run time", stats.UnitSeconds)
 
 	enforcementActionKey = tag.MustNewKey("enforcement_action")
 	constraintKindKey    = tag.MustNewKey("constraint_kind")

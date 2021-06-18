@@ -18,26 +18,19 @@ package watch_test
 import (
 	stdlog "log"
 	"os"
-	"sync"
 	"testing"
 
-	"github.com/onsi/gomega"
-	"github.com/open-policy-agent/gatekeeper/api"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	"github.com/open-policy-agent/gatekeeper/apis"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 var cfg *rest.Config
 
 func TestMain(m *testing.M) {
 	t := &envtest.Environment{}
-	if err := api.AddToScheme(scheme.Scheme); err != nil {
-		stdlog.Fatal(err)
-	}
-	if err := apiextensionsv1beta1.AddToScheme(scheme.Scheme); err != nil {
+	if err := apis.AddToScheme(scheme.Scheme); err != nil {
 		stdlog.Fatal(err)
 	}
 
@@ -52,16 +45,4 @@ func TestMain(m *testing.M) {
 		stdlog.Printf("error while trying to stop server: %v", err)
 	}
 	os.Exit(code)
-}
-
-// StartTestManager adds recFn
-func StartTestManager(mgr manager.Manager, g *gomega.GomegaWithT) (chan struct{}, *sync.WaitGroup) {
-	stop := make(chan struct{})
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		g.Expect(mgr.Start(stop)).NotTo(gomega.HaveOccurred())
-	}()
-	return stop, wg
 }

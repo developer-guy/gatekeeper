@@ -7,11 +7,28 @@ metadata:
     gatekeeper.sh/system: "yes"
   name: gatekeeper-system
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  labels:
+    gatekeeper.sh/system: "yes"
+  name: gatekeeper-critical-pods
+  namespace: gatekeeper-system
+spec:
+  hard:
+    pods: 100
+  scopeSelector:
+    matchExpressions:
+    - operator: In
+      scopeName: PriorityClass
+      values:
+      - system-cluster-critical
+---
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.2.4
+    controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
   labels:
     gatekeeper.sh/system: "yes"
@@ -24,78 +41,90 @@ spec:
     plural: configs
     singular: config
   scope: Namespaced
-  validation:
-    openAPIV3Schema:
-      description: Config is the Schema for the configs API
-      properties:
-        apiVersion:
-          description: 'APIVersion defines the versioned schema of this representation
-            of an object. Servers should convert recognized schemas to the latest
-            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-          type: string
-        kind:
-          description: 'Kind is a string value representing the REST resource this
-            object represents. Servers may infer this from the endpoint the client
-            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-          type: string
-        metadata:
-          type: object
-        spec:
-          description: ConfigSpec defines the desired state of Config
-          properties:
-            sync:
-              description: Configuration for syncing k8s objects
-              properties:
-                syncOnly:
-                  description: If non-empty, only entries on this list will be replicated
-                    into OPA
-                  items:
-                    properties:
-                      group:
-                        type: string
-                      kind:
-                        type: string
-                      version:
-                        type: string
-                    type: object
-                  type: array
-              type: object
-            validation:
-              description: Configuration for validation
-              properties:
-                traces:
-                  description: List of requests to trace. Both "user" and "kinds"
-                    must be specified
-                  items:
-                    properties:
-                      dump:
-                        description: Also dump the state of OPA with the trace. Set
-                          to `All` to dump everything.
-                        type: string
-                      kind:
-                        description: Only trace requests of the following GroupVersionKind
-                        properties:
-                          group:
-                            type: string
-                          kind:
-                            type: string
-                          version:
-                            type: string
-                        type: object
-                      user:
-                        description: Only trace requests from the specified user
-                        type: string
-                    type: object
-                  type: array
-              type: object
-          type: object
-        status:
-          description: ConfigStatus defines the observed state of Config
-          type: object
-      type: object
-  version: v1alpha1
   versions:
   - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Config is the Schema for the configs API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ConfigSpec defines the desired state of Config
+            properties:
+              match:
+                description: Configuration for namespace exclusion
+                items:
+                  properties:
+                    excludedNamespaces:
+                      items:
+                        type: string
+                      type: array
+                    processes:
+                      items:
+                        type: string
+                      type: array
+                  type: object
+                type: array
+              readiness:
+                description: Configuration for readiness tracker
+                properties:
+                  statsEnabled:
+                    type: boolean
+                type: object
+              sync:
+                description: Configuration for syncing k8s objects
+                properties:
+                  syncOnly:
+                    description: If non-empty, only entries on this list will be replicated into OPA
+                    items:
+                      properties:
+                        group:
+                          type: string
+                        kind:
+                          type: string
+                        version:
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              validation:
+                description: Configuration for validation
+                properties:
+                  traces:
+                    description: List of requests to trace. Both "user" and "kinds" must be specified
+                    items:
+                      properties:
+                        dump:
+                          description: Also dump the state of OPA with the trace. Set to `All` to dump everything.
+                          type: string
+                        kind:
+                          description: Only trace requests of the following GroupVersionKind
+                          properties:
+                            group:
+                              type: string
+                            kind:
+                              type: string
+                            version:
+                              type: string
+                          type: object
+                        user:
+                          description: Only trace requests from the specified user
+                          type: string
+                      type: object
+                    type: array
+                type: object
+            type: object
+          status:
+            description: ConfigStatus defines the observed state of Config
+            type: object
+        type: object
     served: true
     storage: true
 status:
@@ -105,108 +134,351 @@ status:
   conditions: []
   storedVersions: []
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
   labels:
-    controller-tools.k8s.io: "1.0"
+    gatekeeper.sh/system: "yes"
+  name: constraintpodstatuses.status.gatekeeper.sh
+spec:
+  group: status.gatekeeper.sh
+  names:
+    kind: ConstraintPodStatus
+    listKind: ConstraintPodStatusList
+    plural: constraintpodstatuses
+    singular: constraintpodstatus
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: ConstraintPodStatus is the Schema for the constraintpodstatuses API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          status:
+            description: ConstraintPodStatusStatus defines the observed state of ConstraintPodStatus
+            properties:
+              constraintUID:
+                description: Storing the constraint UID allows us to detect drift, such as when a constraint has been recreated after its CRD was deleted out from under it, interrupting the watch
+                type: string
+              enforced:
+                type: boolean
+              errors:
+                items:
+                  description: Error represents a single error caught while adding a constraint to OPA
+                  properties:
+                    code:
+                      type: string
+                    location:
+                      type: string
+                    message:
+                      type: string
+                  required:
+                  - code
+                  - message
+                  type: object
+                type: array
+              id:
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              operations:
+                items:
+                  type: string
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.5.0
+  creationTimestamp: null
+  labels:
+    gatekeeper.sh/system: "yes"
+  name: constrainttemplatepodstatuses.status.gatekeeper.sh
+spec:
+  group: status.gatekeeper.sh
+  names:
+    kind: ConstraintTemplatePodStatus
+    listKind: ConstraintTemplatePodStatusList
+    plural: constrainttemplatepodstatuses
+    singular: constrainttemplatepodstatus
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: ConstraintTemplatePodStatus is the Schema for the constrainttemplatepodstatuses API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          status:
+            description: ConstraintTemplatePodStatusStatus defines the observed state of ConstraintTemplatePodStatus
+            properties:
+              errors:
+                items:
+                  description: CreateCRDError represents a single error caught during parsing, compiling, etc.
+                  properties:
+                    code:
+                      type: string
+                    location:
+                      type: string
+                    message:
+                      type: string
+                  required:
+                  - code
+                  - message
+                  type: object
+                type: array
+              id:
+                description: 'Important: Run "make" to regenerate code after modifying this file'
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              operations:
+                items:
+                  type: string
+                type: array
+              templateUID:
+                description: UID is a type that holds unique ID values, including UUIDs.  Because we don't ONLY use UUIDs, this is an alias to string.  Being a type captures intent and helps make sure that UIDs and names do not get conflated.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.5.0
+  creationTimestamp: null
+  labels:
     gatekeeper.sh/system: "yes"
   name: constrainttemplates.templates.gatekeeper.sh
 spec:
   group: templates.gatekeeper.sh
   names:
     kind: ConstraintTemplate
+    listKind: ConstraintTemplateList
     plural: constrainttemplates
+    singular: constrainttemplate
   scope: Cluster
-  subresources:
-    status: {}
-  validation:
-    openAPIV3Schema:
-      properties:
-        apiVersion:
-          description: 'APIVersion defines the versioned schema of this representation
-            of an object. Servers should convert recognized schemas to the latest
-            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-          type: string
-        kind:
-          description: 'Kind is a string value representing the REST resource this
-            object represents. Servers may infer this from the endpoint the client
-            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-          type: string
-        metadata:
-          type: object
-        spec:
-          properties:
-            crd:
-              properties:
-                spec:
-                  properties:
-                    names:
-                      properties:
-                        kind:
-                          type: string
-                        shortNames:
-                          items:
-                            type: string
-                          type: array
-                      type: object
-                    validation:
-                      type: object
-                  type: object
-              type: object
-            targets:
-              items:
-                properties:
-                  libs:
-                    items:
-                      type: string
-                    type: array
-                  rego:
-                    type: string
-                  target:
-                    type: string
-                type: object
-              type: array
-          type: object
-        status:
-          properties:
-            byPod:
-              items:
-                properties:
-                  errors:
-                    items:
-                      properties:
-                        code:
-                          type: string
-                        location:
-                          type: string
-                        message:
-                          type: string
-                      required:
-                      - code
-                      - message
-                      type: object
-                    type: array
-                  id:
-                    description: a unique identifier for the pod that wrote the status
-                    type: string
-                  observedGeneration:
-                    format: int64
-                    type: integer
-                type: object
-              type: array
-            created:
-              type: boolean
-          type: object
-  version: v1beta1
   versions:
-  - name: v1beta1
-    served: true
-    storage: true
   - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ConstraintTemplate is the Schema for the constrainttemplates API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ConstraintTemplateSpec defines the desired state of ConstraintTemplate
+            properties:
+              crd:
+                properties:
+                  spec:
+                    properties:
+                      names:
+                        properties:
+                          kind:
+                            type: string
+                          shortNames:
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      validation:
+                        properties:
+                          openAPIV3Schema:
+                            type: object
+                            x-kubernetes-preserve-unknown-fields: true
+                        type: object
+                    type: object
+                type: object
+              targets:
+                items:
+                  properties:
+                    libs:
+                      items:
+                        type: string
+                      type: array
+                    rego:
+                      type: string
+                    target:
+                      type: string
+                  type: object
+                type: array
+            type: object
+          status:
+            description: ConstraintTemplateStatus defines the observed state of ConstraintTemplate
+            properties:
+              byPod:
+                items:
+                  description: ByPodStatus defines the observed state of ConstraintTemplate as seen by an individual controller
+                  properties:
+                    errors:
+                      items:
+                        description: CreateCRDError represents a single error caught during parsing, compiling, etc.
+                        properties:
+                          code:
+                            type: string
+                          location:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                        - code
+                        - message
+                        type: object
+                      type: array
+                    id:
+                      description: a unique identifier for the pod that wrote the status
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      type: integer
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                type: array
+              created:
+                type: boolean
+            type: object
+        type: object
     served: true
     storage: false
+    subresources:
+      status: {}
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: ConstraintTemplate is the Schema for the constrainttemplates API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ConstraintTemplateSpec defines the desired state of ConstraintTemplate
+            properties:
+              crd:
+                properties:
+                  spec:
+                    properties:
+                      names:
+                        properties:
+                          kind:
+                            type: string
+                          shortNames:
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      validation:
+                        properties:
+                          openAPIV3Schema:
+                            type: object
+                            x-kubernetes-preserve-unknown-fields: true
+                        type: object
+                    type: object
+                type: object
+              targets:
+                items:
+                  properties:
+                    libs:
+                      items:
+                        type: string
+                      type: array
+                    rego:
+                      type: string
+                    target:
+                      type: string
+                  type: object
+                type: array
+            type: object
+          status:
+            description: ConstraintTemplateStatus defines the observed state of ConstraintTemplate
+            properties:
+              byPod:
+                items:
+                  description: ByPodStatus defines the observed state of ConstraintTemplate as seen by an individual controller
+                  properties:
+                    errors:
+                      items:
+                        description: CreateCRDError represents a single error caught during parsing, compiling, etc.
+                        properties:
+                          code:
+                            type: string
+                          location:
+                            type: string
+                          message:
+                            type: string
+                        required:
+                        - code
+                        - message
+                        type: object
+                      type: array
+                    id:
+                      description: a unique identifier for the pod that wrote the status
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      type: integer
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                type: array
+              created:
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
 status:
   acceptedNames:
     kind: ""
@@ -222,6 +494,38 @@ metadata:
   name: gatekeeper-admin
   namespace: gatekeeper-system
 ---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: '*'
+  labels:
+    gatekeeper.sh/system: "yes"
+  name: gatekeeper-admin
+spec:
+  allowPrivilegeEscalation: false
+  fsGroup:
+    ranges:
+    - max: 65535
+      min: 1
+    rule: MustRunAs
+  requiredDropCapabilities:
+  - ALL
+  runAsUser:
+    rule: MustRunAsNonRoot
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    ranges:
+    - max: 65535
+      min: 1
+    rule: MustRunAs
+  volumes:
+  - configMap
+  - projected
+  - secret
+  - downwardAPI
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -231,6 +535,13 @@ metadata:
   name: gatekeeper-manager-role
   namespace: gatekeeper-system
 rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -305,11 +616,37 @@ rules:
   - update
   - watch
 - apiGroups:
+  - mutations.gatekeeper.sh
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - policy
+  resourceNames:
+  - gatekeeper-admin
   resources:
   - podsecuritypolicies
   verbs:
   - use
+- apiGroups:
+  - status.gatekeeper.sh
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - templates.gatekeeper.sh
   resources:
@@ -322,6 +659,15 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - templates.gatekeeper.sh
+  resources:
+  - constrainttemplates/finalizers
+  verbs:
+  - delete
+  - get
+  - patch
+  - update
 - apiGroups:
   - templates.gatekeeper.sh
   resources:
@@ -404,7 +750,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    control-plane: controller-manager
+    control-plane: audit-controller
     gatekeeper.sh/operation: audit
     gatekeeper.sh/system: "yes"
   name: gatekeeper-audit
@@ -425,9 +771,11 @@ spec:
         gatekeeper.sh/operation: audit
         gatekeeper.sh/system: "yes"
     spec:
+      automountServiceAccountToken: true
       containers:
       - args:
         - --operation=audit
+        - --operation=status
         - --logtostderr
         command:
         - /manager
@@ -441,13 +789,13 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        image: quay.io/open-policy-agent/gatekeeper:v3.1.0-beta.9
+        image: openpolicyagent/gatekeeper:v3.5.0-rc.1
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
             path: /healthz
             port: 9090
-        name: auditcontainer
+        name: manager
         ports:
         - containerPort: 8888
           name: metrics
@@ -471,11 +819,13 @@ spec:
           capabilities:
             drop:
             - all
+          readOnlyRootFilesystem: true
           runAsGroup: 999
           runAsNonRoot: true
           runAsUser: 1000
       nodeSelector:
         kubernetes.io/os: linux
+      priorityClassName: system-cluster-critical
       serviceAccountName: gatekeeper-admin
       terminationGracePeriodSeconds: 60
 ---
@@ -489,7 +839,7 @@ metadata:
   name: gatekeeper-controller-manager
   namespace: gatekeeper-system
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       control-plane: controller-manager
@@ -504,6 +854,19 @@ spec:
         gatekeeper.sh/operation: webhook
         gatekeeper.sh/system: "yes"
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: gatekeeper.sh/operation
+                  operator: In
+                  values:
+                  - webhook
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
       containers:
       - args:
         - --port=8443
@@ -522,7 +885,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        image: quay.io/open-policy-agent/gatekeeper:v3.1.0-beta.9
+        image: openpolicyagent/gatekeeper:v3.5.0-rc.1
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
@@ -555,6 +918,7 @@ spec:
           capabilities:
             drop:
             - all
+          readOnlyRootFilesystem: true
           runAsGroup: 999
           runAsNonRoot: true
           runAsUser: 1000
@@ -564,6 +928,7 @@ spec:
           readOnly: true
       nodeSelector:
         kubernetes.io/os: linux
+      priorityClassName: system-cluster-critical
       serviceAccountName: gatekeeper-admin
       terminationGracePeriodSeconds: 60
       volumes:
@@ -572,26 +937,41 @@ spec:
           defaultMode: 420
           secretName: gatekeeper-webhook-server-cert
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    gatekeeper.sh/system: "yes"
+  name: gatekeeper-controller-manager
+  namespace: gatekeeper-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+      gatekeeper.sh/operation: webhook
+      gatekeeper.sh/system: "yes"
+---
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  creationTimestamp: null
   labels:
     gatekeeper.sh/system: "yes"
   name: gatekeeper-validating-webhook-configuration
 webhooks:
-- clientConfig:
-    caBundle: Cg==
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
     service:
       name: gatekeeper-webhook-service
       namespace: gatekeeper-system
       path: /v1/admit
   failurePolicy: Ignore
+  matchPolicy: Exact
   name: validation.gatekeeper.sh
   namespaceSelector:
     matchExpressions:
-    - key: control-plane
-      operator: DoesNotExist
     - key: admission.gatekeeper.sh/ignore
       operator: DoesNotExist
   rules:
@@ -605,14 +985,17 @@ webhooks:
     resources:
     - '*'
   sideEffects: None
-  timeoutSeconds: 5
-- clientConfig:
-    caBundle: Cg==
+  timeoutSeconds: 3
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
     service:
       name: gatekeeper-webhook-service
       namespace: gatekeeper-system
       path: /v1/admitlabel
   failurePolicy: Fail
+  matchPolicy: Exact
   name: check-ignore-label.gatekeeper.sh
   rules:
   - apiGroups:
@@ -625,4 +1008,4 @@ webhooks:
     resources:
     - namespaces
   sideEffects: None
-  timeoutSeconds: 5
+  timeoutSeconds: 3

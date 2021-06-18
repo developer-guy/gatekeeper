@@ -26,17 +26,17 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/open-policy-agent/gatekeeper/pkg/util"
 	"github.com/open-policy-agent/gatekeeper/pkg/watch"
+	testclient "github.com/open-policy-agent/gatekeeper/test/clients"
 	"github.com/open-policy-agent/gatekeeper/third_party/sigs.k8s.io/controller-runtime/pkg/dynamiccache"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -97,7 +97,7 @@ func setupController(mgr manager.Manager, r reconcile.Reconciler, events chan ev
 			Source:         events,
 			DestBufferSize: 1024,
 		},
-		&handler.EnqueueRequestsFromMapFunc{ToRequests: util.EventPacker{}},
+		handler.EnqueueRequestsFromMapFunc(util.EventPackerMapFunc()),
 	)
 }
 
@@ -111,7 +111,7 @@ func TestRegistrar_AddUnknown(t *testing.T) {
 	grp, ctx := errgroup.WithContext(ctx)
 
 	grp.Go(func() error {
-		return mgr.Start(ctx.Done())
+		return mgr.Start(ctx)
 	})
 
 	events := make(chan event.GenericEvent)
@@ -141,7 +141,7 @@ func Test_ReconcileErrorDoesNotBlockController(t *testing.T) {
 	grp, ctx := errgroup.WithContext(ctx)
 
 	grp.Go(func() error {
-		return mgr.Start(ctx.Done())
+		return mgr.Start(ctx)
 	})
 
 	// Events will be used to receive events from dynamic watches registered
@@ -153,12 +153,11 @@ func Test_ReconcileErrorDoesNotBlockController(t *testing.T) {
 	}
 	events := make(chan event.GenericEvent, 1024)
 	events <- event.GenericEvent{
-		Meta:   errObj,
 		Object: errObj,
 	}
 
 	requests := make(chan reconcile.Request)
-	rec := func(request reconcile.Request) (reconcile.Result, error) {
+	rec := func(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 		select {
 		case requests <- request:
 		case <-ctx.Done():
@@ -225,14 +224,14 @@ loop:
 func TestRegistrar_Reconnect(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mgr, wm := setupManager(t)
-	c := mgr.GetClient()
+	c := testclient.NewRetryClient(mgr.GetClient())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	grp, ctx := errgroup.WithContext(ctx)
 
 	grp.Go(func() error {
-		return mgr.Start(ctx.Done())
+		return mgr.Start(ctx)
 	})
 
 	events := make(chan event.GenericEvent)
@@ -240,7 +239,7 @@ func TestRegistrar_Reconnect(t *testing.T) {
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating registrar")
 
 	req := make(chan reconcile.Request)
-	rec := reconcile.Func(func(request reconcile.Request) (reconcile.Result, error) {
+	rec := reconcile.Func(func(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 		select {
 		case req <- request:
 		case <-ctx.Done():
@@ -257,7 +256,7 @@ func TestRegistrar_Reconnect(t *testing.T) {
 	}
 	const plural = "testresources"
 	crd := makeCRD(gvk, plural)
-	err = applyCRD(ctx, g, mgr.GetClient(), gvk, crd)
+	err = applyCRD(ctx, g, c, gvk, crd)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "applying CRD")
 
 	err = r.AddWatch(gvk)
@@ -284,7 +283,7 @@ func TestRegistrar_Reconnect(t *testing.T) {
 
 	// Create the CRD and resource again, expect our previous watch to pick them up automatically.
 	crd = makeCRD(gvk, plural)
-	err = applyCRD(ctx, g, mgr.GetClient(), gvk, crd)
+	err = applyCRD(ctx, g, c, gvk, crd)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "reapplying CRD")
 	u = unstructuredFor(gvk, "test-add-again")
 	err = c.Create(ctx, u)
@@ -302,7 +301,7 @@ func TestRegistrar_Reconnect(t *testing.T) {
 func Test_Registrar_Replay(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	mgr, wm := setupManager(t)
-	c := mgr.GetClient()
+	c := testclient.NewRetryClient(mgr.GetClient())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -317,7 +316,7 @@ func Test_Registrar_Replay(t *testing.T) {
 		g.Expect(err).NotTo(gomega.HaveOccurred(), "creating registrar")
 
 		requests := make(chan reconcile.Request)
-		rec := func(request reconcile.Request) (reconcile.Result, error) {
+		rec := func(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 			select {
 			case requests <- request:
 			case <-ctx.Done():
@@ -347,7 +346,7 @@ func Test_Registrar_Replay(t *testing.T) {
 	}
 
 	grp.Go(func() error {
-		return mgr.Start(ctx.Done())
+		return mgr.Start(ctx)
 	})
 
 	gvk := schema.GroupVersionKind{
@@ -385,32 +384,42 @@ func Test_Registrar_Replay(t *testing.T) {
 }
 
 // makeCRD generates a CRD specified by GVK and plural for testing.
-func makeCRD(gvk schema.GroupVersionKind, plural string) *apiextensionsv1beta1.CustomResourceDefinition {
-	return &apiextensionsv1beta1.CustomResourceDefinition{
+func makeCRD(gvk schema.GroupVersionKind, plural string) *apiextensionsv1.CustomResourceDefinition {
+	trueBool := true
+	return &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s.%s", plural, gvk.Group),
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "CustomResourceDefinition",
-			APIVersion: "apiextensions/v1beta1",
+			APIVersion: "apiextensions/v1",
 		},
-		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: gvk.Group,
-			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
+			Names: apiextensionsv1.CustomResourceDefinitionNames{
 				Plural:   plural,
 				Singular: strings.ToLower(gvk.Kind),
 				Kind:     gvk.Kind,
 			},
-			Versions: []apiextensionsv1beta1.CustomResourceDefinitionVersion{
-				{Name: gvk.Version, Served: true, Storage: true},
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+				{
+					Name:    gvk.Version,
+					Served:  true,
+					Storage: true,
+					Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+							XPreserveUnknownFields: &trueBool,
+						},
+					},
+				},
 			},
-			Scope: apiextensionsv1beta1.ClusterScoped,
+			Scope: apiextensionsv1.ClusterScoped,
 		},
 	}
 }
 
 // applyCRD applies a CRD and waits for it to register successfully.
-func applyCRD(ctx context.Context, g *gomega.GomegaWithT, client client.Client, gvk schema.GroupVersionKind, crd runtime.Object) error {
+func applyCRD(ctx context.Context, g *gomega.GomegaWithT, client client.Client, gvk schema.GroupVersionKind, crd client.Object) error {
 	err := client.Create(ctx, crd)
 	if err != nil {
 		return fmt.Errorf("creating %+v: %w", gvk, err)
@@ -450,8 +459,8 @@ loop:
 			return fmt.Errorf("getting resources for group: %+v: %w", gvk.GroupVersion(), err)
 		}
 
-		for _, r := range resourceList.APIResources {
-			if r.Name == plural {
+		for i := range resourceList.APIResources {
+			if resourceList.APIResources[i].Name == plural {
 				select {
 				case <-time.After(100 * time.Millisecond):
 				case <-ctx.Done():
@@ -509,7 +518,7 @@ func expectedSet(objs []*unstructured.Unstructured) map[string]bool {
 
 // waitForExpected waits for reconcile requests for the specified resources to be received in a particular namespace.
 // Returns nil if expectations are satisfied.
-// Returns error if the context is cancelled before expectations are satisfied.
+// Returns error if the context is canceled before expectations are satisfied.
 func waitForExpected(ctx context.Context, objs []*unstructured.Unstructured, c <-chan reconcile.Request, namespace string) error {
 	expected := expectedSet(objs)
 	for len(expected) > 0 {

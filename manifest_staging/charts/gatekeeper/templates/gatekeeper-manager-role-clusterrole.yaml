@@ -63,11 +63,37 @@ rules:
   - update
   - watch
 - apiGroups:
+  - mutations.gatekeeper.sh
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - policy
+  resourceNames:
+  - gatekeeper-admin
   resources:
   - podsecuritypolicies
   verbs:
   - use
+- apiGroups:
+  - status.gatekeeper.sh
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - templates.gatekeeper.sh
   resources:
@@ -83,6 +109,15 @@ rules:
 - apiGroups:
   - templates.gatekeeper.sh
   resources:
+  - constrainttemplates/finalizers
+  verbs:
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - templates.gatekeeper.sh
+  resources:
   - constrainttemplates/status
   verbs:
   - get
@@ -94,6 +129,20 @@ rules:
   - gatekeeper-validating-webhook-configuration
   resources:
   - validatingwebhookconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resourceNames:
+  - gatekeeper-mutating-webhook-configuration
+  resources:
+  - mutatingwebhookconfigurations
   verbs:
   - create
   - delete

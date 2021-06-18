@@ -18,23 +18,30 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
 	"github.com/go-logr/zapr"
+	"github.com/open-policy-agent/cert-controller/pkg/rotator"
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
-	"github.com/open-policy-agent/gatekeeper/api"
-	configv1alpha1 "github.com/open-policy-agent/gatekeeper/api/v1alpha1"
+	api "github.com/open-policy-agent/gatekeeper/apis"
+	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
+	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	statusv1beta1 "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/audit"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller"
-	configController "github.com/open-policy-agent/gatekeeper/pkg/controller/config"
-	"github.com/open-policy-agent/gatekeeper/pkg/controller/constrainttemplate"
+	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
+	"github.com/open-policy-agent/gatekeeper/pkg/operations"
 	"github.com/open-policy-agent/gatekeeper/pkg/readiness"
 	"github.com/open-policy-agent/gatekeeper/pkg/target"
 	"github.com/open-policy-agent/gatekeeper/pkg/upgrade"
 	"github.com/open-policy-agent/gatekeeper/pkg/util"
+	"github.com/open-policy-agent/gatekeeper/pkg/version"
 	"github.com/open-policy-agent/gatekeeper/pkg/watch"
 	"github.com/open-policy-agent/gatekeeper/pkg/webhook"
 	"github.com/open-policy-agent/gatekeeper/third_party/sigs.k8s.io/controller-runtime/pkg/dynamiccache"
@@ -46,17 +53,23 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
-	k8sCli "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
 
+var webhooks = []rotator.WebhookInfo{
+	{
+		Name: webhook.VwhName,
+		Type: rotator.Validating,
+	},
+}
+
 const (
 	secretName     = "gatekeeper-webhook-server-cert"
-	vwhName        = "gatekeeper-validating-webhook-configuration"
 	serviceName    = "gatekeeper-webhook-service"
 	caName         = "gatekeeper-ca"
 	caOrganization = "gatekeeper"
@@ -67,7 +80,6 @@ var (
 	dnsName          = fmt.Sprintf("%s.%s.svc", serviceName, util.GetNamespace())
 	scheme           = runtime.NewScheme()
 	setupLog         = ctrl.Log.WithName("setup")
-	operations       = newOperationSet()
 	logLevelEncoders = map[string]zapcore.LevelEncoder{
 		"lower":        zapcore.LowercaseLevelEncoder,
 		"capital":      zapcore.CapitalLevelEncoder,
@@ -85,6 +97,9 @@ var (
 	port                = flag.Int("port", 443, "port for the server. defaulted to 443 if unspecified ")
 	certDir             = flag.String("cert-dir", "/certs", "The directory where certs are stored, defaults to /certs")
 	disableCertRotation = flag.Bool("disable-cert-rotation", false, "disable automatic generation and rotation of webhook TLS certificates/keys")
+	enableProfile       = flag.Bool("enable-pprof", false, "enable pprof profiling")
+	profilePort         = flag.Int("pprof-port", 6060, "port for pprof profiling. defaulted to 6060 if unspecified")
+	disabledBuiltins    = util.NewFlagSet()
 )
 
 func init() {
@@ -93,29 +108,10 @@ func init() {
 	_ = api.AddToScheme(scheme)
 
 	_ = configv1alpha1.AddToScheme(scheme)
+	_ = statusv1beta1.AddToScheme(scheme)
+	_ = mutationsv1alpha1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
-	flag.Var(operations, "operation", "The operation to be performed by this instance. e.g. audit, webhook. This flag can be declared more than once. Omitting will default to supporting all operations.")
-}
-
-type opSet map[string]bool
-
-var _ flag.Value = opSet{}
-
-func newOperationSet() opSet {
-	return make(map[string]bool)
-}
-
-func (l opSet) String() string {
-	contents := make([]string, 0)
-	for k := range l {
-		contents = append(contents, k)
-	}
-	return fmt.Sprintf("%s", contents)
-}
-
-func (l opSet) Set(s string) error {
-	l[s] = true
-	return nil
+	flag.Var(disabledBuiltins, "disable-opa-builtin", "disable opa built-in function, this flag can be declared more than once.")
 }
 
 func main() {
@@ -126,12 +122,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *enableProfile {
+		setupLog.Info("Starting profiling on port %s", *profilePort)
+		go func() {
+			addr := fmt.Sprintf("%s:%d", "localhost", *profilePort)
+			setupLog.Error(http.ListenAndServe(addr, nil), "unable to start profiling server")
+		}()
+	}
+
 	switch *logLevel {
 	case "DEBUG":
 		eCfg := zap.NewDevelopmentEncoderConfig()
 		eCfg.LevelKey = *logLevelKey
 		eCfg.EncodeLevel = encoder
-		ctrl.SetLogger(crzap.New(crzap.UseDevMode(true), crzap.Encoder(zapcore.NewConsoleEncoder(eCfg))))
+		logger := crzap.New(crzap.UseDevMode(true), crzap.Encoder(zapcore.NewConsoleEncoder(eCfg)))
+		ctrl.SetLogger(logger)
+		klog.SetLogger(logger)
 	case "WARNING", "ERROR":
 		setLoggerForProduction(encoder)
 	case "INFO":
@@ -140,16 +146,16 @@ func main() {
 		eCfg := zap.NewProductionEncoderConfig()
 		eCfg.LevelKey = *logLevelKey
 		eCfg.EncodeLevel = encoder
-		ctrl.SetLogger(crzap.New(crzap.UseDevMode(false), crzap.Encoder(zapcore.NewJSONEncoder(eCfg))))
+		logger := crzap.New(crzap.UseDevMode(false), crzap.Encoder(zapcore.NewJSONEncoder(eCfg)))
+		ctrl.SetLogger(logger)
+		klog.SetLogger(logger)
 	}
+	config := ctrl.GetConfigOrDie()
+	config.UserAgent = version.GetUserAgent()
 
-	// set default if --operation is not provided
-	if len(operations) == 0 {
-		operations["audit"] = true
-		operations["webhook"] = true
-	}
+	webhooks = webhook.AppendMutationWebhookIfEnabled(webhooks)
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		NewCache:               dynamiccache.New,
 		Scheme:                 scheme,
 		MetricsBindAddress:     *metricsAddr,
@@ -168,9 +174,9 @@ func main() {
 
 	// Make sure certs are generated and valid if cert rotation is enabled.
 	setupFinished := make(chan struct{})
-	if !*disableCertRotation && operations["webhook"] {
+	if !*disableCertRotation && operations.IsAssigned(operations.Webhook) {
 		setupLog.Info("setting up cert rotation")
-		if err := webhook.AddRotator(mgr, &webhook.CertRotator{
+		if err := rotator.AddRotator(mgr, &rotator.CertRotator{
 			SecretKey: types.NamespacedName{
 				Namespace: util.GetNamespace(),
 				Name:      secretName,
@@ -179,8 +185,9 @@ func main() {
 			CAName:         caName,
 			CAOrganization: caOrganization,
 			DNSName:        dnsName,
-			CertsMounted:   setupFinished,
-		}, vwhName); err != nil {
+			IsReady:        setupFinished,
+			Webhooks:       webhooks,
+		}); err != nil {
 			setupLog.Error(err, "unable to set up cert rotation")
 			os.Exit(1)
 		}
@@ -193,7 +200,7 @@ func main() {
 	sw := watch.NewSwitch()
 
 	// Setup tracker and register readiness probe.
-	tracker, err := readiness.SetupTracker(mgr)
+	tracker, err := readiness.SetupTracker(mgr, *mutation.MutationEnabled)
 	if err != nil {
 		setupLog.Error(err, "unable to register readiness tracker")
 		os.Exit(1)
@@ -221,26 +228,6 @@ func main() {
 	setupLog.Info("disabling controllers...")
 	sw.Stop()
 
-	// Create a fresh client to be sure RESTmapper is up-to-date
-	setupLog.Info("cleaning state...")
-	cli, err := k8sCli.New(mgr.GetConfig(), k8sCli.Options{Scheme: mgr.GetScheme(), Mapper: nil})
-	if err != nil {
-		setupLog.Error(err, "unable to create cleanup client")
-		os.Exit(1)
-	}
-
-	// Clean up sync finalizers
-	// This logic should be disabled if OPA is run as a sidecar
-	syncCleaned := make(chan struct{})
-	go configController.TearDownState(cli, syncCleaned)
-
-	// Clean up constraint finalizers
-	templatesCleaned := make(chan struct{})
-	go constrainttemplate.TearDownState(cli, templatesCleaned)
-
-	<-syncCleaned
-	<-templatesCleaned
-	setupLog.Info("state cleaned")
 	if hadError {
 		os.Exit(1)
 	}
@@ -251,7 +238,7 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	<-setupFinished
 
 	// initialize OPA
-	driver := local.New(local.Tracing(false))
+	driver := local.New(local.Tracing(false), local.DisableBuiltins(disabledBuiltins.ToSlice()...))
 	backend, err := opa.NewBackend(opa.Driver(driver))
 	if err != nil {
 		setupLog.Error(err, "unable to set up OPA backend")
@@ -261,6 +248,8 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	if err != nil {
 		setupLog.Error(err, "unable to set up OPA client")
 	}
+
+	mutationCache := mutation.NewSystem()
 
 	c := mgr.GetCache()
 	dc, ok := c.(watch.RemovableCache)
@@ -275,47 +264,52 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 		os.Exit(1)
 	}
 	if err := mgr.Add(wm); err != nil {
-		setupLog.Error(err, "unable to register watch manager to the manager")
+		setupLog.Error(err, "unable to register watch manager with the manager")
 		os.Exit(1)
 	}
 
+	// processExcluder is used for namespace exclusion for specified processes in config
+	processExcluder := process.Get()
+
 	// Setup all Controllers
-	setupLog.Info("setting up controller")
+	setupLog.Info("setting up controllers")
 	opts := controller.Dependencies{
 		Opa:              client,
 		WatchManger:      wm,
 		ControllerSwitch: sw,
 		Tracker:          tracker,
+		ProcessExcluder:  processExcluder,
+		MutationCache:    mutationCache,
 	}
 	if err := controller.AddToManager(mgr, opts); err != nil {
-		setupLog.Error(err, "unable to register controllers to the manager")
+		setupLog.Error(err, "unable to register controllers with the manager")
 		os.Exit(1)
 	}
 
-	if operations["webhook"] {
+	if operations.IsAssigned(operations.Webhook) {
 		setupLog.Info("setting up webhooks")
-		if err := webhook.AddToManager(mgr, client); err != nil {
-			setupLog.Error(err, "unable to register webhooks to the manager")
+		if err := webhook.AddToManager(mgr, client, processExcluder, mutationCache); err != nil {
+			setupLog.Error(err, "unable to register webhooks with the manager")
 			os.Exit(1)
 		}
 	}
-	if operations["audit"] {
+	if operations.IsAssigned(operations.Audit) {
 		setupLog.Info("setting up audit")
-		if err := audit.AddToManager(mgr, client); err != nil {
-			setupLog.Error(err, "unable to register audit to the manager")
+		if err := audit.AddToManager(mgr, client, processExcluder); err != nil {
+			setupLog.Error(err, "unable to register audit with the manager")
 			os.Exit(1)
 		}
 	}
 
 	setupLog.Info("setting up upgrade")
 	if err := upgrade.AddToManager(mgr); err != nil {
-		setupLog.Error(err, "unable to register upgrade to the manager")
+		setupLog.Error(err, "unable to register upgrade with the manager")
 		os.Exit(1)
 	}
 
 	setupLog.Info("setting up metrics")
 	if err := metrics.AddToManager(mgr); err != nil {
-		setupLog.Error(err, "unable to register metrics to the manager")
+		setupLog.Error(err, "unable to register metrics with the manager")
 		os.Exit(1)
 	}
 }
@@ -330,11 +324,12 @@ func setLoggerForProduction(encoder zapcore.LevelEncoder) {
 	lvl := zap.NewAtomicLevelAt(zap.WarnLevel)
 	opts = append(opts, zap.AddStacktrace(zap.ErrorLevel),
 		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
-			return zapcore.NewSampler(core, time.Second, 100, 100)
-		}))
-	opts = append(opts, zap.AddCallerSkip(1), zap.ErrorOutput(sink))
+			return zapcore.NewSamplerWithOptions(core, time.Second, 100, 100)
+		}),
+		zap.AddCallerSkip(1), zap.ErrorOutput(sink))
 	zlog := zap.New(zapcore.NewCore(&crzap.KubeAwareEncoder{Encoder: enc, Verbose: false}, sink, lvl))
 	zlog = zlog.WithOptions(opts...)
 	newlogger := zapr.NewLogger(zlog)
 	ctrl.SetLogger(newlogger)
+	klog.SetLogger(newlogger)
 }

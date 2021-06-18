@@ -10,10 +10,10 @@ import (
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
 	rtypes "github.com/open-policy-agent/frameworks/constraint/pkg/types"
-	"github.com/open-policy-agent/gatekeeper/api/v1alpha1"
+	"github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
 	"github.com/open-policy-agent/gatekeeper/pkg/target"
-	testclients "github.com/open-policy-agent/gatekeeper/test/client"
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	testclients "github.com/open-policy-agent/gatekeeper/test/clients"
+	admissionv1 "k8s.io/api/admission/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -195,13 +195,13 @@ func TestTemplateValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Could not initialize OPA: %s", err)
 			}
-			handler := validationHandler{opa: opa}
+			handler := validationHandler{opa: opa, webhookHandler: webhookHandler{}}
 			b, err := yaml.YAMLToJSON([]byte(tt.Template))
 			if err != nil {
 				t.Fatalf("Error parsing yaml: %s", err)
 			}
-			review := atypes.Request{
-				AdmissionRequest: admissionv1beta1.AdmissionRequest{
+			review := &atypes.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "templates.gatekeeper.sh",
 						Version: "v1beta1",
@@ -227,7 +227,7 @@ type nsGetter struct {
 	testclients.NoopClient
 }
 
-func (f *nsGetter) Get(ctx context.Context, key ctrlclient.ObjectKey, obj runtime.Object) error {
+func (f *nsGetter) Get(ctx context.Context, key ctrlclient.ObjectKey, obj ctrlclient.Object) error {
 	if ns, ok := obj.(*corev1.Namespace); ok {
 		ns.ObjectMeta = metav1.ObjectMeta{
 			Name: key.Name,
@@ -242,7 +242,7 @@ type errorNSGetter struct {
 	testclients.NoopClient
 }
 
-func (f *errorNSGetter) Get(ctx context.Context, key ctrlclient.ObjectKey, obj runtime.Object) error {
+func (f *errorNSGetter) Get(ctx context.Context, key ctrlclient.ObjectKey, obj ctrlclient.Object) error {
 	return k8serrors.NewNotFound(k8schema.GroupResource{Resource: "namespaces"}, key.Name)
 }
 
@@ -284,14 +284,18 @@ func TestReviewRequest(t *testing.T) {
 		},
 	}
 	for _, tt := range tc {
-		t.Run(tt.Name, func(t *testing.T) {
+		maxThreads := -1
+		testFn := func(t *testing.T) {
 			opa, err := makeOpaClient()
 			if err != nil {
 				t.Fatalf("Could not initialize OPA: %s", err)
 			}
-			handler := validationHandler{opa: opa, injectedConfig: tt.Cfg, client: tt.CachedClient, reader: tt.APIReader}
-			review := atypes.Request{
-				AdmissionRequest: admissionv1beta1.AdmissionRequest{
+			handler := validationHandler{opa: opa, webhookHandler: webhookHandler{injectedConfig: tt.Cfg, client: tt.CachedClient, reader: tt.APIReader}}
+			if maxThreads > 0 {
+				handler.semaphore = make(chan struct{}, maxThreads)
+			}
+			review := &atypes.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "",
 						Version: "v1",
@@ -311,7 +315,11 @@ func TestReviewRequest(t *testing.T) {
 			if err == nil && tt.Error {
 				t.Error("err = nil; want non-nil")
 			}
-		})
+		}
+		t.Run(tt.Name, testFn)
+
+		maxThreads = 1
+		t.Run(tt.Name+" with max threads", testFn)
 	}
 
 }
@@ -377,13 +385,13 @@ func TestConstraintValidation(t *testing.T) {
 			if _, err := opa.AddTemplate(context.Background(), unversioned); err != nil {
 				t.Fatalf("Could not add template: %s", err)
 			}
-			handler := validationHandler{opa: opa}
+			handler := validationHandler{opa: opa, webhookHandler: webhookHandler{}}
 			b, err := yaml.YAMLToJSON([]byte(tt.Constraint))
 			if err != nil {
 				t.Fatalf("Error parsing yaml: %s", err)
 			}
-			review := atypes.Request{
-				AdmissionRequest: admissionv1beta1.AdmissionRequest{
+			review := &atypes.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "constraints.gatekeeper.sh",
 						Version: "v1beta1",
@@ -481,7 +489,8 @@ func TestTracing(t *testing.T) {
 		},
 	}
 	for _, tt := range tc {
-		t.Run(tt.Name, func(t *testing.T) {
+		maxThreads := -1
+		testFn := func(t *testing.T) {
 			opa, err := makeOpaClient()
 			if err != nil {
 				t.Fatalf("Could not initialize OPA: %s", err)
@@ -497,9 +506,12 @@ func TestTracing(t *testing.T) {
 			if _, err := opa.AddTemplate(context.Background(), unversioned); err != nil {
 				t.Fatalf("Could not add template: %s", err)
 			}
-			handler := validationHandler{opa: opa, injectedConfig: tt.Cfg}
-			review := atypes.Request{
-				AdmissionRequest: admissionv1beta1.AdmissionRequest{
+			handler := validationHandler{opa: opa, webhookHandler: webhookHandler{injectedConfig: tt.Cfg}}
+			if maxThreads > 0 {
+				handler.semaphore = make(chan struct{}, maxThreads)
+			}
+			review := &atypes.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "",
 						Version: "v1",
@@ -529,7 +541,10 @@ func TestTracing(t *testing.T) {
 					t.Error("Trace when no trace is expected")
 				}
 			}
-		})
+		}
+		t.Run(tt.Name, testFn)
+		maxThreads = 1
+		t.Run(tt.Name+" with max threads", testFn)
 	}
 }
 
@@ -547,7 +562,7 @@ func newConstraint(kind, name string, enforcementAction string, t *testing.T) *u
 	return c
 }
 
-func TestGetDenyMessages(t *testing.T) {
+func TestGetValidationMessages(t *testing.T) {
 	resDryRun := &rtypes.Result{
 		Msg:               "test",
 		Constraint:        newConstraint("Foo", "ph", "dryrun", t),
@@ -558,6 +573,11 @@ func TestGetDenyMessages(t *testing.T) {
 		Constraint:        newConstraint("Foo", "ph", "deny", t),
 		EnforcementAction: "deny",
 	}
+	resWarn := &rtypes.Result{
+		Msg:               "test",
+		Constraint:        newConstraint("Foo", "ph", "warn", t),
+		EnforcementAction: "warn",
+	}
 	resRandom := &rtypes.Result{
 		Msg:               "test",
 		Constraint:        newConstraint("Foo", "ph", "random", t),
@@ -565,23 +585,34 @@ func TestGetDenyMessages(t *testing.T) {
 	}
 
 	tc := []struct {
-		Name             string
-		Result           []*rtypes.Result
-		ExpectedMsgCount int
+		Name                 string
+		Result               []*rtypes.Result
+		ExpectedDenyMsgCount int
+		ExpectedWarnMsgCount int
 	}{
 		{
 			Name: "Only One Dry Run",
 			Result: []*rtypes.Result{
 				resDryRun,
 			},
-			ExpectedMsgCount: 0,
+			ExpectedDenyMsgCount: 0,
+			ExpectedWarnMsgCount: 0,
 		},
 		{
 			Name: "Only One Deny",
 			Result: []*rtypes.Result{
 				resDeny,
 			},
-			ExpectedMsgCount: 1,
+			ExpectedDenyMsgCount: 1,
+			ExpectedWarnMsgCount: 0,
+		},
+		{
+			Name: "Only One Warn",
+			Result: []*rtypes.Result{
+				resWarn,
+			},
+			ExpectedDenyMsgCount: 0,
+			ExpectedWarnMsgCount: 1,
 		},
 		{
 			Name: "One Dry Run and One Deny",
@@ -589,7 +620,18 @@ func TestGetDenyMessages(t *testing.T) {
 				resDryRun,
 				resDeny,
 			},
-			ExpectedMsgCount: 1,
+			ExpectedDenyMsgCount: 1,
+			ExpectedWarnMsgCount: 0,
+		},
+		{
+			Name: "One Dry Run, One Deny, One Warn",
+			Result: []*rtypes.Result{
+				resDryRun,
+				resDeny,
+				resWarn,
+			},
+			ExpectedDenyMsgCount: 1,
+			ExpectedWarnMsgCount: 1,
 		},
 		{
 			Name: "Two Deny",
@@ -597,7 +639,17 @@ func TestGetDenyMessages(t *testing.T) {
 				resDeny,
 				resDeny,
 			},
-			ExpectedMsgCount: 2,
+			ExpectedDenyMsgCount: 2,
+			ExpectedWarnMsgCount: 0,
+		},
+		{
+			Name: "Two Warn",
+			Result: []*rtypes.Result{
+				resWarn,
+				resWarn,
+			},
+			ExpectedDenyMsgCount: 0,
+			ExpectedWarnMsgCount: 2,
 		},
 		{
 			Name: "Two Dry Run",
@@ -605,25 +657,32 @@ func TestGetDenyMessages(t *testing.T) {
 				resDryRun,
 				resDryRun,
 			},
-			ExpectedMsgCount: 0,
+			ExpectedDenyMsgCount: 0,
+			ExpectedWarnMsgCount: 0,
 		},
 		{
 			Name: "Random EnforcementAction",
 			Result: []*rtypes.Result{
 				resRandom,
 			},
-			ExpectedMsgCount: 0,
+			ExpectedDenyMsgCount: 0,
+			ExpectedWarnMsgCount: 0,
 		},
 	}
+
 	for _, tt := range tc {
-		t.Run(tt.Name, func(t *testing.T) {
+		maxThreads := -1
+		testFn := func(t *testing.T) {
 			opa, err := makeOpaClient()
 			if err != nil {
 				t.Fatalf("Could not initialize OPA: %s", err)
 			}
-			handler := validationHandler{opa: opa}
-			review := atypes.Request{
-				AdmissionRequest: admissionv1beta1.AdmissionRequest{
+			handler := validationHandler{opa: opa, webhookHandler: webhookHandler{}}
+			if maxThreads > 0 {
+				handler.semaphore = make(chan struct{}, maxThreads)
+			}
+			review := &atypes.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
 					Kind: metav1.GroupVersionKind{
 						Group:   "",
 						Version: "v1",
@@ -634,9 +693,54 @@ func TestGetDenyMessages(t *testing.T) {
 					},
 				},
 			}
-			msgs := handler.getDenyMessages(tt.Result, review)
-			if len(msgs) != tt.ExpectedMsgCount {
-				t.Errorf("expected count = %d; actual count = %d", tt.ExpectedMsgCount, len(msgs))
+			denyMsgs, warnMsgs := handler.getValidationMessages(tt.Result, review)
+			if len(denyMsgs) != tt.ExpectedDenyMsgCount {
+				t.Errorf("denyMsgs: expected count = %d; actual count = %d", tt.ExpectedDenyMsgCount, len(denyMsgs))
+			}
+			if len(warnMsgs) != tt.ExpectedWarnMsgCount {
+				t.Errorf("warnMsgs: expected count = %d; actual count = %d", tt.ExpectedWarnMsgCount, len(warnMsgs))
+			}
+		}
+		t.Run(tt.Name, testFn)
+
+		maxThreads = 1
+		t.Run(tt.Name+" with max threads", testFn)
+	}
+}
+
+func TestValidateConfigResource(t *testing.T) {
+	tc := []struct {
+		TestName string
+		Name     string
+		Err      bool
+	}{
+		{
+			TestName: "Wrong name",
+			Name:     "FooBar",
+			Err:      true,
+		},
+		{
+			TestName: "Correct name",
+			Name:     "config",
+		},
+	}
+
+	for _, tt := range tc {
+		t.Run(tt.TestName, func(t *testing.T) {
+			handler := validationHandler{}
+			req := &atypes.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Name: tt.Name,
+				},
+			}
+
+			err := handler.validateConfigResource(context.Background(), req)
+
+			if tt.Err && err == nil {
+				t.Errorf("Expected error but received nil")
+			}
+			if !tt.Err && err != nil {
+				t.Errorf("Did not expect error but received: %v", err)
 			}
 		})
 	}

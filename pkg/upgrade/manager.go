@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	"github.com/open-policy-agent/gatekeeper/pkg/util"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -44,15 +45,13 @@ func New(ctx context.Context, mgr manager.Manager) (*Manager, error) {
 }
 
 // Start implements the Runnable interface
-func (um *Manager) Start(stop <-chan struct{}) error {
+func (um *Manager) Start(ctx context.Context) error {
 	log.Info("Starting Upgrade Manager")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	defer log.Info("Stopping upgrade manager workers")
 	errCh := make(chan error)
 	go func() { errCh <- um.upgrade(ctx) }()
 	select {
-	case <-stop:
+	case <-ctx.Done():
 		return nil
 	case err := <-errCh:
 		if err != nil {
@@ -60,12 +59,12 @@ func (um *Manager) Start(stop <-chan struct{}) error {
 		}
 	}
 	// We must block indefinitely or manager will exit
-	<-stop
+	<-ctx.Done()
 	return nil
 }
 
 func (um *Manager) ensureCRDExists(ctx context.Context) error {
-	crd := &apiextensionsv1beta1.CustomResourceDefinition{}
+	crd := &apiextensionsv1.CustomResourceDefinition{}
 	return um.client.Get(ctx, types.NamespacedName{Name: crdName}, crd)
 }
 
@@ -118,8 +117,8 @@ func (um *Manager) upgradeGroupVersion(ctx context.Context, groupVersion string)
 
 	// For some reason we have seen duplicate kinds, suppress that
 	uniqueKinds := make(map[string]bool)
-	for _, r := range resourceList.APIResources {
-		uniqueKinds[r.Kind] = true
+	for i := range resourceList.APIResources {
+		uniqueKinds[resourceList.APIResources[i].Kind] = true
 	}
 
 	// get resource for each Kind
@@ -137,10 +136,11 @@ func (um *Manager) upgradeGroupVersion(ctx context.Context, groupVersion string)
 			return err
 		}
 		log.Info("resource count", "count", len(instanceList.Items))
-		updateResources := make(map[string]unstructured.Unstructured, len(instanceList.Items))
+		updateResources := make(map[util.KindVersionResource]unstructured.Unstructured, len(instanceList.Items))
 		// get each resource
 		for _, item := range instanceList.Items {
-			updateResources[item.GetSelfLink()] = item
+			key := util.GetUniqueKey(item)
+			updateResources[key] = item
 		}
 
 		if len(updateResources) > 0 {
@@ -158,7 +158,7 @@ func (um *Manager) upgradeGroupVersion(ctx context.Context, groupVersion string)
 }
 
 type updateResourceLoop struct {
-	ur      map[string]unstructured.Unstructured
+	ur      map[util.KindVersionResource]unstructured.Unstructured
 	client  client.Client
 	stop    chan struct{}
 	stopped chan struct{}
@@ -193,7 +193,8 @@ func (urloop *updateResourceLoop) update() {
 					log.Error(err, "could not update resource", "name", name, "namespace", namespace)
 				}
 				if !failure {
-					delete(urloop.ur, latestItem.GetSelfLink())
+					key := util.GetUniqueKey(latestItem)
+					delete(urloop.ur, key)
 				}
 			}
 		}

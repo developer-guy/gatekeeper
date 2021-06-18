@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -12,12 +11,11 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v2"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 var (
-	outputDir  = flag.String("output-dir", "manifest_staging/charts/gatekeeper", "The root directory in which to write the Helm chart")
-	useCRDsDir = flag.Bool("use-crds-dir", false, `Use the "crds" subdirectory, which requires Helm v3`)
+	outputDir = flag.String("output-dir", "manifest_staging/charts/gatekeeper", "The root directory in which to write the Helm chart")
 )
 
 var kindRegex = regexp.MustCompile(`(?m)^kind:[\s]+([\S]+)[\s]*$`)
@@ -42,7 +40,7 @@ func extractName(s string) (string, error) {
 }
 
 func extractCRDKind(obj string) (string, error) {
-	crd := &apiextensionsv1beta1.CustomResourceDefinition{}
+	crd := &apiextensionsv1.CustomResourceDefinition{}
 	if err := yaml.Unmarshal([]byte(obj), crd); err != nil {
 		return "", err
 	}
@@ -74,15 +72,18 @@ func (ks *kindSet) Write() error {
 		nameExtractor := extractName
 		if kind == "CustomResourceDefinition" {
 			nameExtractor = extractCRDKind
-			if *useCRDsDir {
-				subPath = "crds"
-				parentDir := path.Join(*outputDir, subPath)
-				fmt.Printf("Making %s\n", parentDir)
-				if err := os.Mkdir(parentDir, 0755); err != nil {
-					return err
-				}
+			subPath = "crds"
+			parentDir := path.Join(*outputDir, subPath)
+			fmt.Printf("Making %s\n", parentDir)
+			if err := os.Mkdir(parentDir, 0750); err != nil {
+				return err
 			}
 		}
+
+		if kind == "Namespace" {
+			continue
+		}
+
 		for _, obj := range objs {
 			name, err := nameExtractor(obj)
 			if err != nil {
@@ -96,7 +97,15 @@ func (ks *kindSet) Write() error {
 				obj = "{{- if not .Values.disableValidatingWebhook }}\n" + obj + "{{- end }}\n"
 			}
 
-			if err := ioutil.WriteFile(destFile, []byte(obj), 0644); err != nil {
+			if name == "gatekeeper-mutating-webhook-configuration" {
+				obj = "{{- if .Values.experimentalEnableMutation }}\n" + obj + "{{- end }}\n"
+			}
+
+			if kind == "Deployment" {
+				obj = strings.Replace(obj, "      labels:", "      labels:\n{{- include \"gatekeeper.podLabels\" . }}", 1)
+			}
+
+			if err := os.WriteFile(destFile, []byte(obj), 0600); err != nil {
 				return err
 			}
 		}
@@ -113,7 +122,7 @@ func doReplacements(obj string) string {
 
 func copyStaticFiles(root string, subdirs ...string) error {
 	p := path.Join(append([]string{root}, subdirs...)...)
-	files, err := ioutil.ReadDir(p)
+	files, err := os.ReadDir(p)
 	if err != nil {
 		return err
 	}
@@ -123,19 +132,19 @@ func copyStaticFiles(root string, subdirs ...string) error {
 		destination := path.Join(append([]string{*outputDir}, newSubDirs...)...)
 		if f.IsDir() {
 			fmt.Printf("Making %s\n", destination)
-			if err := os.Mkdir(destination, 0755); err != nil {
+			if err := os.Mkdir(destination, 0750); err != nil {
 				return err
 			}
 			if err := copyStaticFiles(root, newSubDirs...); err != nil {
 				return err
 			}
 		} else {
-			contents, err := ioutil.ReadFile(path.Join(p, f.Name()))
+			contents, err := os.ReadFile(path.Join(p, f.Name())) // #nosec G304
 			if err != nil {
 				return err
 			}
 			fmt.Printf("Writing %s\n", destination)
-			if err := ioutil.WriteFile(destination, contents, 0644); err != nil {
+			if err := os.WriteFile(destination, contents, 0600); err != nil {
 				return err
 			}
 		}

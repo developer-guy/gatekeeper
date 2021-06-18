@@ -27,60 +27,80 @@ import (
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/core/templates"
 	rtypes "github.com/open-policy-agent/frameworks/constraint/pkg/types"
-	"github.com/open-policy-agent/gatekeeper/api"
-	"github.com/open-policy-agent/gatekeeper/api/v1alpha1"
+	"github.com/open-policy-agent/gatekeeper/apis"
+	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	"github.com/open-policy-agent/gatekeeper/pkg/keys"
+	"github.com/open-policy-agent/gatekeeper/pkg/logging"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators"
 	"github.com/open-policy-agent/gatekeeper/pkg/target"
 	"github.com/open-policy-agent/gatekeeper/pkg/util"
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
-	authenticationv1 "k8s.io/api/authentication/v1"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	k8sruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// httpStatusWarning is the HTTP return code for displaying warning messages in admission webhook (supported in Kubernetes v1.19+)
+// https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#response
+const httpStatusWarning = 299
+
+var (
+	maxServingThreads = flag.Int("max-serving-threads", -1, "(alpha) cap the number of threads handling non-trivial requests, -1 means an infinite number of threads")
+)
+
 func init() {
 	AddToManagerFuncs = append(AddToManagerFuncs, AddPolicyWebhook)
-	if err := api.AddToScheme(runtimeScheme); err != nil {
+	if err := apis.AddToScheme(runtimeScheme); err != nil {
 		log.Error(err, "unable to add to scheme")
 		panic(err)
 	}
 }
 
-var log = logf.Log.WithName("webhook")
-
-const (
-	serviceAccountName = "gatekeeper-admin"
-)
-
-var (
-	runtimeScheme                      = k8sruntime.NewScheme()
-	codecs                             = serializer.NewCodecFactory(runtimeScheme)
-	deserializer                       = codecs.UniversalDeserializer()
-	disableEnforcementActionValidation = flag.Bool("disable-enforcementaction-validation", false, "disable validation of the enforcementAction field of a constraint")
-	logDenies                          = flag.Bool("log-denies", false, "log detailed info on each deny")
-	serviceaccount                     = fmt.Sprintf("system:serviceaccount:%s:%s", util.GetNamespace(), serviceAccountName)
-	// webhookName is deprecated, set this on the manifest YAML if needed"
-)
-
-// +kubebuilder:webhook:verbs=create;update,path=/v1/admit,mutating=false,failurePolicy=ignore,groups=*,resources=*,versions=*,name=validation.gatekeeper.sh
+// +kubebuilder:webhook:verbs=create;update,path=/v1/admit,mutating=false,failurePolicy=ignore,groups=*,resources=*,versions=*,name=validation.gatekeeper.sh,sideEffects=None,admissionReviewVersions=v1;v1beta1,matchPolicy=Exact
 // +kubebuilder:rbac:groups=*,resources=*,verbs=get;list;watch
 
 // AddPolicyWebhook registers the policy webhook server with the manager
-func AddPolicyWebhook(mgr manager.Manager, opa *opa.Client) error {
+func AddPolicyWebhook(mgr manager.Manager, opa *opa.Client, processExcluder *process.Excluder, mutationCache *mutation.System) error {
 	reporter, err := newStatsReporter()
 	if err != nil {
 		return err
 	}
-	wh := &admission.Webhook{Handler: &validationHandler{opa: opa, client: mgr.GetClient(), reader: mgr.GetAPIReader(), reporter: reporter}}
+	eventBroadcaster := record.NewBroadcaster()
+	kubeClient := kubernetes.NewForConfigOrDie(mgr.GetConfig())
+	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(
+		scheme.Scheme,
+		corev1.EventSource{Component: "gatekeeper-webhook"})
+	handler := &validationHandler{
+		opa: opa,
+		webhookHandler: webhookHandler{
+			client:          mgr.GetClient(),
+			reader:          mgr.GetAPIReader(),
+			reporter:        reporter,
+			processExcluder: processExcluder,
+			eventRecorder:   recorder,
+			gkNamespace:     util.GetNamespace(),
+		},
+	}
+	if *maxServingThreads > 0 {
+		handler.semaphore = make(chan struct{}, *maxServingThreads)
+	}
+	wh := &admission.Webhook{Handler: handler}
+	// TODO(https://github.com/open-policy-agent/gatekeeper/issues/661): remove log injection if the race condition in the cited bug is eliminated.
+	// Otherwise we risk having unstable logger names for the webhook.
+	if err := wh.InjectLogger(log); err != nil {
+		return err
+	}
 	mgr.GetWebhookServer().Register("/v1/admit", wh)
 	return nil
 }
@@ -88,26 +108,13 @@ func AddPolicyWebhook(mgr manager.Manager, opa *opa.Client) error {
 var _ admission.Handler = &validationHandler{}
 
 type validationHandler struct {
-	opa      *opa.Client
-	client   client.Client
-	reporter StatsReporter
-	// reader that will be configured to use the API server
-	// obtained from mgr.GetAPIReader()
-	reader client.Reader
-	// for testing
-	injectedConfig *v1alpha1.Config
+	webhookHandler
+	opa       *opa.Client
+	semaphore chan struct{}
 }
 
-type requestResponse string
-
-const (
-	errorResponse   requestResponse = "error"
-	denyResponse    requestResponse = "deny"
-	allowResponse   requestResponse = "allow"
-	unknownResponse requestResponse = "unknown"
-)
-
 // Handle the validation request
+// nolint: gocritic // Must accept admission.Request as a struct to satisfy Handler interface.
 func (h *validationHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	log := log.WithValues("hookType", "validation")
 
@@ -117,7 +124,7 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 		return admission.ValidationResponse(true, "Gatekeeper does not self-manage")
 	}
 
-	if req.AdmissionRequest.Operation == admissionv1beta1.Delete {
+	if req.AdmissionRequest.Operation == admissionv1.Delete {
 		// oldObject is the existing object.
 		// It is null for DELETE operations in API servers prior to v1.15.0.
 		// https://github.com/kubernetes/website/pull/14671
@@ -134,7 +141,7 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 		req.AdmissionRequest.Object = req.AdmissionRequest.OldObject
 	}
 
-	if userErr, err := h.validateGatekeeperResources(ctx, req); err != nil {
+	if userErr, err := h.validateGatekeeperResources(ctx, &req); err != nil {
 		vResp := admission.ValidationResponse(false, err.Error())
 		if vResp.Result == nil {
 			vResp.Result = &metav1.Status{}
@@ -150,14 +157,24 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 	requestResponse := unknownResponse
 	defer func() {
 		if h.reporter != nil {
-			if err := h.reporter.ReportRequest(
-				requestResponse, time.Since(timeStart)); err != nil {
+			if err := h.reporter.ReportValidationRequest(requestResponse, time.Since(timeStart)); err != nil {
 				log.Error(err, "failed to report request")
 			}
 		}
 	}()
 
-	resp, err := h.reviewRequest(ctx, req)
+	// namespace is excluded from webhook using config
+	isExcludedNamespace, err := h.skipExcludedNamespace(&req.AdmissionRequest, process.Webhook)
+	if err != nil {
+		log.Error(err, "error while excluding namespace")
+	}
+
+	if isExcludedNamespace {
+		requestResponse = allowResponse
+		return admission.ValidationResponse(true, "Namespace is set to be ignored by Gatekeeper config")
+	}
+
+	resp, err := h.reviewRequest(ctx, &req)
 	if err != nil {
 		log.Error(err, "error executing query")
 		vResp := admission.ValidationResponse(false, err.Error())
@@ -170,11 +187,15 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 	}
 
 	res := resp.Results()
-	msgs := h.getDenyMessages(res, req)
-	if len(msgs) > 0 {
-		vResp := admission.ValidationResponse(false, strings.Join(msgs, "\n"))
+	denyMsgs, warnMsgs := h.getValidationMessages(res, &req)
+
+	if len(denyMsgs) > 0 {
+		vResp := admission.ValidationResponse(false, strings.Join(denyMsgs, "\n"))
 		if vResp.Result == nil {
 			vResp.Result = &metav1.Status{}
+		}
+		if len(warnMsgs) > 0 {
+			vResp.Warnings = warnMsgs
 		}
 		vResp.Result.Code = http.StatusForbidden
 		requestResponse = denyResponse
@@ -182,13 +203,21 @@ func (h *validationHandler) Handle(ctx context.Context, req admission.Request) a
 	}
 
 	requestResponse = allowResponse
-	return admission.ValidationResponse(true, "")
+	vResp := admission.ValidationResponse(true, "")
+	if vResp.Result == nil {
+		vResp.Result = &metav1.Status{}
+	}
+	if len(warnMsgs) > 0 {
+		vResp.Warnings = warnMsgs
+		vResp.Result.Code = httpStatusWarning
+	}
+	return vResp
 }
 
-func (h *validationHandler) getDenyMessages(res []*rtypes.Result, req admission.Request) []string {
-	var msgs []string
+func (h *validationHandler) getValidationMessages(res []*rtypes.Result, req *admission.Request) ([]string, []string) {
+	var denyMsgs, warnMsgs []string
 	var resourceName string
-	if len(res) > 0 && *logDenies {
+	if len(res) > 0 && (*logDenies || *emitAdmissionEvents) {
 		resourceName = req.AdmissionRequest.Name
 		if len(resourceName) == 0 && req.AdmissionRequest.Object.Raw != nil {
 			// On a CREATE operation, the client may omit name and
@@ -200,57 +229,109 @@ func (h *validationHandler) getDenyMessages(res []*rtypes.Result, req admission.
 		}
 	}
 	for _, r := range res {
-		if r.EnforcementAction == "deny" || r.EnforcementAction == "dryrun" {
-			if *logDenies {
-				log.WithValues(
-					"process", "admission",
-					"event_type", "violation",
-					"constraint_name", r.Constraint.GetName(),
-					"constraint_kind", r.Constraint.GetKind(),
-					"constraint_action", r.EnforcementAction,
-					"resource_kind", req.AdmissionRequest.Kind.Kind,
-					"resource_namespace", req.AdmissionRequest.Namespace,
-					"resource_name", resourceName,
-					"request_username", req.AdmissionRequest.UserInfo.Username,
-				).Info("denied admission")
+		if err := util.ValidateEnforcementAction(util.EnforcementAction(r.EnforcementAction)); err != nil {
+			continue
+		}
+		if *logDenies {
+			log.WithValues(
+				logging.Process, "admission",
+				logging.EventType, "violation",
+				logging.ConstraintName, r.Constraint.GetName(),
+				logging.ConstraintGroup, r.Constraint.GroupVersionKind().Group,
+				logging.ConstraintAPIVersion, r.Constraint.GroupVersionKind().Version,
+				logging.ConstraintKind, r.Constraint.GetKind(),
+				logging.ConstraintAction, r.EnforcementAction,
+				logging.ResourceGroup, req.AdmissionRequest.Kind.Group,
+				logging.ResourceAPIVersion, req.AdmissionRequest.Kind.Version,
+				logging.ResourceKind, req.AdmissionRequest.Kind.Kind,
+				logging.ResourceNamespace, req.AdmissionRequest.Namespace,
+				logging.ResourceName, resourceName,
+				logging.RequestUsername, req.AdmissionRequest.UserInfo.Username,
+			).Info("denied admission")
+		}
+		if *emitAdmissionEvents {
+			annotations := map[string]string{
+				logging.Process:              "admission",
+				logging.EventType:            "violation",
+				logging.ConstraintName:       r.Constraint.GetName(),
+				logging.ConstraintGroup:      r.Constraint.GroupVersionKind().Group,
+				logging.ConstraintAPIVersion: r.Constraint.GroupVersionKind().Version,
+				logging.ConstraintKind:       r.Constraint.GetKind(),
+				logging.ConstraintAction:     r.EnforcementAction,
+				logging.ResourceGroup:        req.AdmissionRequest.Kind.Group,
+				logging.ResourceAPIVersion:   req.AdmissionRequest.Kind.Version,
+				logging.ResourceKind:         req.AdmissionRequest.Kind.Kind,
+				logging.ResourceNamespace:    req.AdmissionRequest.Namespace,
+				logging.ResourceName:         resourceName,
+				logging.RequestUsername:      req.AdmissionRequest.UserInfo.Username,
 			}
+			var eventMsg, reason string
+			switch r.EnforcementAction {
+			case string(util.Dryrun):
+				eventMsg = "Dryrun violation"
+				reason = "DryrunViolation"
+			case string(util.Warn):
+				eventMsg = "Admission webhook \"validation.gatekeeper.sh\" raised a warning for this request"
+				reason = "WarningAdmission"
+			default:
+				eventMsg = "Admission webhook \"validation.gatekeeper.sh\" denied request"
+				reason = "FailedAdmission"
+			}
+			ref := getViolationRef(
+				h.gkNamespace,
+				req.AdmissionRequest.Kind.Kind,
+				resourceName,
+				req.AdmissionRequest.Namespace,
+				r.Constraint.GetKind(),
+				r.Constraint.GetName(),
+				r.Constraint.GetNamespace())
+			h.eventRecorder.AnnotatedEventf(
+				ref,
+				annotations,
+				corev1.EventTypeWarning,
+				reason,
+				"%s, Resource Namespace: %s, Constraint: %s, Message: %s",
+				eventMsg,
+				req.AdmissionRequest.Namespace,
+				r.Constraint.GetName(),
+				r.Msg)
 		}
-		// only deny enforcementAction should prompt deny admission response
-		if r.EnforcementAction == "deny" {
-			msgs = append(msgs, fmt.Sprintf("[denied by %s] %s", r.Constraint.GetName(), r.Msg))
+
+		if r.EnforcementAction == string(util.Deny) {
+			denyMsgs = append(denyMsgs, fmt.Sprintf("[%s] %s", r.Constraint.GetName(), r.Msg))
+		}
+
+		if r.EnforcementAction == string(util.Warn) {
+			warnMsgs = append(warnMsgs, fmt.Sprintf("[%s] %s", r.Constraint.GetName(), r.Msg))
 		}
 	}
-	return msgs
-}
-
-func (h *validationHandler) getConfig(ctx context.Context) (*v1alpha1.Config, error) {
-	if h.injectedConfig != nil {
-		return h.injectedConfig, nil
-	}
-	if h.client == nil {
-		return nil, errors.New("no client available to retrieve validation config")
-	}
-	cfg := &v1alpha1.Config{}
-	return cfg, h.client.Get(ctx, keys.Config, cfg)
-}
-
-func isGkServiceAccount(user authenticationv1.UserInfo) bool {
-	return user.Username == serviceaccount
+	return denyMsgs, warnMsgs
 }
 
 // validateGatekeeperResources returns whether an issue is user error (vs internal) and any errors
 // validating internal resources
-func (h *validationHandler) validateGatekeeperResources(ctx context.Context, req admission.Request) (bool, error) {
-	if req.AdmissionRequest.Kind.Group == "templates.gatekeeper.sh" && req.AdmissionRequest.Kind.Kind == "ConstraintTemplate" {
+func (h *validationHandler) validateGatekeeperResources(ctx context.Context, req *admission.Request) (bool, error) {
+	gvk := req.AdmissionRequest.Kind
+
+	switch {
+	case gvk.Group == "templates.gatekeeper.sh" && gvk.Kind == "ConstraintTemplate":
 		return h.validateTemplate(ctx, req)
-	}
-	if req.AdmissionRequest.Kind.Group == "constraints.gatekeeper.sh" {
+	case gvk.Group == "constraints.gatekeeper.sh":
 		return h.validateConstraint(ctx, req)
+	case gvk.Group == "config.gatekeeper.sh" && gvk.Kind == "Config":
+		if err := h.validateConfigResource(ctx, req); err != nil {
+			return true, err
+		}
+	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "AssignMetadata":
+		return h.validateAssignMetadata(ctx, req)
+	case req.AdmissionRequest.Kind.Group == mutationsGroup && req.AdmissionRequest.Kind.Kind == "Assign":
+		return h.validateAssign(ctx, req)
 	}
+
 	return false, nil
 }
 
-func (h *validationHandler) validateTemplate(ctx context.Context, req admission.Request) (bool, error) {
+func (h *validationHandler) validateTemplate(ctx context.Context, req *admission.Request) (bool, error) {
 	templ, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, nil)
 	if err != nil {
 		return false, err
@@ -265,7 +346,7 @@ func (h *validationHandler) validateTemplate(ctx context.Context, req admission.
 	return false, nil
 }
 
-func (h *validationHandler) validateConstraint(ctx context.Context, req admission.Request) (bool, error) {
+func (h *validationHandler) validateConstraint(ctx context.Context, req *admission.Request) (bool, error) {
 	obj := &unstructured.Unstructured{}
 	if _, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, obj); err != nil {
 		return false, err
@@ -292,26 +373,68 @@ func (h *validationHandler) validateConstraint(ctx context.Context, req admissio
 	return false, nil
 }
 
+func (h *validationHandler) validateConfigResource(ctx context.Context, req *admission.Request) error {
+	if req.Name != keys.Config.Name {
+		return fmt.Errorf("config resource must have name 'config'")
+	}
+	return nil
+}
+
+func (h *validationHandler) validateAssignMetadata(ctx context.Context, req *admission.Request) (bool, error) {
+	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, &mutationsv1alpha1.AssignMetadata{})
+	if err != nil {
+		return false, err
+	}
+	assignMetadata, ok := obj.(*mutationsv1alpha1.AssignMetadata)
+	if !ok {
+		return false, fmt.Errorf("Deserialized object is not of type AssignMetadata")
+	}
+	err = mutators.IsValidAssignMetadata(assignMetadata)
+	if err != nil {
+		return true, err
+	}
+
+	return false, nil
+}
+
+func (h *validationHandler) validateAssign(ctx context.Context, req *admission.Request) (bool, error) {
+	obj, _, err := deserializer.Decode(req.AdmissionRequest.Object.Raw, nil, &mutationsv1alpha1.Assign{})
+	if err != nil {
+		return false, err
+	}
+	assign, ok := obj.(*mutationsv1alpha1.Assign)
+	if !ok {
+		return false, fmt.Errorf("Deserialized object is not of type Assign")
+	}
+
+	err = mutators.IsValidAssign(assign)
+	if err != nil {
+		return true, err
+	}
+
+	return false, nil
+}
+
 // traceSwitch returns true if a request should be traced
-func (h *validationHandler) reviewRequest(ctx context.Context, req admission.Request) (*rtypes.Responses, error) {
-	cfg, _ := h.getConfig(ctx)
-	traceEnabled := false
-	dump := false
-	for _, trace := range cfg.Spec.Validation.Traces {
-		if trace.User != req.AdmissionRequest.UserInfo.Username {
-			continue
+func (h *validationHandler) reviewRequest(ctx context.Context, req *admission.Request) (*rtypes.Responses, error) {
+	// if we have a maximum number of concurrent serving goroutines, try to acquire
+	// a lock and block until we succeed
+	if h.semaphore != nil {
+		select {
+		case h.semaphore <- struct{}{}:
+			defer func() {
+				<-h.semaphore
+			}()
+		case <-ctx.Done():
+			return nil, errors.New("serving context canceled, aborting request")
 		}
-		gvk := v1alpha1.GVK{
-			Group:   req.AdmissionRequest.Kind.Group,
-			Version: req.AdmissionRequest.Kind.Version,
-			Kind:    req.AdmissionRequest.Kind.Kind,
-		}
-		if gvk == trace.Kind {
-			traceEnabled = true
-			if strings.EqualFold(trace.Dump, "All") {
-				dump = true
-			}
-		}
+	}
+	trace, dump := h.tracingLevel(ctx, req)
+	// Coerce server-side apply admission requests into treating namespaces
+	// the same way as older admission requests. See
+	// https://github.com/open-policy-agent/gatekeeper/issues/792
+	if req.Kind.Kind == namespaceKind && req.Kind.Group == "" {
+		req.Namespace = ""
 	}
 	review := &target.AugmentedReview{AdmissionRequest: &req.AdmissionRequest}
 	if req.AdmissionRequest.Namespace != "" {
@@ -329,8 +452,8 @@ func (h *validationHandler) reviewRequest(ctx context.Context, req admission.Req
 		review.Namespace = ns
 	}
 
-	resp, err := h.opa.Review(ctx, review, opa.Tracing(traceEnabled))
-	if traceEnabled {
+	resp, err := h.opa.Review(ctx, review, opa.Tracing(trace))
+	if trace {
 		log.Info(resp.TraceDump())
 	}
 	if dump {
@@ -342,4 +465,13 @@ func (h *validationHandler) reviewRequest(ctx context.Context, req admission.Req
 		}
 	}
 	return resp, err
+}
+
+func getViolationRef(gkNamespace, rkind, rname, rnamespace, ckind, cname, cnamespace string) *corev1.ObjectReference {
+	return &corev1.ObjectReference{
+		Kind:      rkind,
+		Name:      rname,
+		UID:       types.UID(rkind + "/" + rnamespace + "/" + rname + "/" + ckind + "/" + cnamespace + "/" + cname),
+		Namespace: gkNamespace,
+	}
 }

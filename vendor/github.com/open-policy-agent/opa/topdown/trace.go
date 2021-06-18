@@ -44,12 +44,20 @@ const (
 	// FailOp is emitted when an expression evaluates to false.
 	FailOp Op = "Fail"
 
+	// DuplicateOp is emitted when a query has produced a duplicate value. The search
+	// will stop at the point where the duplicate was emitted and backtrack.
+	DuplicateOp Op = "Duplicate"
+
 	// NoteOp is emitted when an expression invokes a tracing built-in function.
 	NoteOp Op = "Note"
 
 	// IndexOp is emitted during an expression evaluation to represent lookup
 	// matches.
 	IndexOp Op = "Index"
+
+	// WasmOp is emitted when resolving a ref using an external
+	// Resolver.
+	WasmOp Op = "Wasm"
 )
 
 // VarMetadata provides some user facing information about
@@ -66,9 +74,10 @@ type Event struct {
 	Location      *ast.Location           // The location of the Node this event relates to.
 	QueryID       uint64                  // Identifies the query this event belongs to.
 	ParentID      uint64                  // Identifies the parent query this event belongs to.
-	Locals        *ast.ValueMap           // Contains local variable bindings from the query context.
-	LocalMetadata map[ast.Var]VarMetadata // Contains metadata for the local variable bindings.
+	Locals        *ast.ValueMap           // Contains local variable bindings from the query context. Nil if variables were not included in the trace event.
+	LocalMetadata map[ast.Var]VarMetadata // Contains metadata for the local variable bindings. Nil if variables were not included in the trace event.
 	Message       string                  // Contains message for Note events.
+	Ref           *ast.Ref                // Identifies the subject ref for the event. Only applies to Index and Wasm operations.
 }
 
 // HasRule returns true if the Event contains an ast.Rule.
@@ -131,13 +140,53 @@ func (evt *Event) equalNodes(other *Event) bool {
 }
 
 // Tracer defines the interface for tracing in the top-down evaluation engine.
+// Deprecated: Use QueryTracer instead.
 type Tracer interface {
 	Enabled() bool
 	Trace(*Event)
 }
 
-// BufferTracer implements the Tracer interface by simply buffering all events
-// received.
+// QueryTracer defines the interface for tracing in the top-down evaluation engine.
+// The implementation can provide additional configuration to modify the tracing
+// behavior for query evaluations.
+type QueryTracer interface {
+	Enabled() bool
+	TraceEvent(Event)
+	Config() TraceConfig
+}
+
+// TraceConfig defines some common configuration for Tracer implementations
+type TraceConfig struct {
+	PlugLocalVars bool // Indicate whether to plug local variable bindings before calling into the tracer.
+}
+
+// legacyTracer Implements the QueryTracer interface by wrapping an older Tracer instance.
+type legacyTracer struct {
+	t Tracer
+}
+
+func (l *legacyTracer) Enabled() bool {
+	return l.t.Enabled()
+}
+
+func (l *legacyTracer) Config() TraceConfig {
+	return TraceConfig{
+		PlugLocalVars: true, // For backwards compatibility old tracers will plug local variables
+	}
+}
+
+func (l *legacyTracer) TraceEvent(evt Event) {
+	l.t.Trace(&evt)
+}
+
+// WrapLegacyTracer will create a new QueryTracer which wraps an
+// older Tracer instance.
+func WrapLegacyTracer(tracer Tracer) QueryTracer {
+	return &legacyTracer{t: tracer}
+}
+
+// BufferTracer implements the Tracer and QueryTracer interface by
+// simply buffering all events received.
 type BufferTracer []*Event
 
 // NewBufferTracer returns a new BufferTracer.
@@ -147,15 +196,23 @@ func NewBufferTracer() *BufferTracer {
 
 // Enabled always returns true if the BufferTracer is instantiated.
 func (b *BufferTracer) Enabled() bool {
-	if b == nil {
-		return false
-	}
-	return true
+	return b != nil
 }
 
 // Trace adds the event to the buffer.
+// Deprecated: Use TraceEvent instead.
 func (b *BufferTracer) Trace(evt *Event) {
 	*b = append(*b, evt)
+}
+
+// TraceEvent adds the event to the buffer.
+func (b *BufferTracer) TraceEvent(evt Event) {
+	*b = append(*b, &evt)
+}
+
+// Config returns the Tracers standard configuration
+func (b *BufferTracer) Config() TraceConfig {
+	return TraceConfig{PlugLocalVars: true}
 }
 
 // PrettyTrace pretty prints the trace to the writer.
@@ -187,16 +244,26 @@ func formatEvent(event *Event, depth int) string {
 	padding := formatEventPadding(event, depth)
 	if event.Op == NoteOp {
 		return fmt.Sprintf("%v%v %q", padding, event.Op, event.Message)
-	} else if event.Message != "" {
-		return fmt.Sprintf("%v%v %v %v", padding, event.Op, event.Node, event.Message)
-	} else {
-		switch node := event.Node.(type) {
-		case *ast.Rule:
-			return fmt.Sprintf("%v%v %v", padding, event.Op, node.Path())
-		default:
-			return fmt.Sprintf("%v%v %v", padding, event.Op, rewrite(event).Node)
-		}
 	}
+
+	var details interface{}
+	if node, ok := event.Node.(*ast.Rule); ok {
+		details = node.Path()
+	} else if event.Ref != nil {
+		details = event.Ref
+	} else {
+		details = rewrite(event).Node
+	}
+
+	template := "%v%v %v"
+	opts := []interface{}{padding, event.Op, details}
+
+	if event.Message != "" {
+		template += " %v"
+		opts = append(opts, event.Message)
+	}
+
+	return fmt.Sprintf(template, opts...)
 }
 
 func formatEventPadding(event *Event, depth int) string {
@@ -306,9 +373,6 @@ func numDigits10(n int) int {
 }
 
 func formatLocation(event *Event, fileAliases map[string]string) string {
-	if event.Op == NoteOp {
-		return fmt.Sprintf("%v", "note")
-	}
 
 	location := event.Location
 	if location == nil {
@@ -344,31 +408,23 @@ func builtinTrace(bctx BuiltinContext, args []*ast.Term, iter func(*ast.Term) er
 		return handleBuiltinErr(ast.Trace.Name, bctx.Location, err)
 	}
 
-	if !traceIsEnabled(bctx.Tracers) {
+	if !bctx.TraceEnabled {
 		return iter(ast.BooleanTerm(true))
 	}
 
-	evt := &Event{
+	evt := Event{
 		Op:       NoteOp,
+		Location: bctx.Location,
 		QueryID:  bctx.QueryID,
 		ParentID: bctx.ParentID,
 		Message:  string(str),
 	}
 
-	for i := range bctx.Tracers {
-		bctx.Tracers[i].Trace(evt)
+	for i := range bctx.QueryTracers {
+		bctx.QueryTracers[i].TraceEvent(evt)
 	}
 
 	return iter(ast.BooleanTerm(true))
-}
-
-func traceIsEnabled(tracers []Tracer) bool {
-	for i := range tracers {
-		if tracers[i].Enabled() {
-			return true
-		}
-	}
-	return false
 }
 
 func rewrite(event *Event) *Event {
@@ -386,7 +442,7 @@ func rewrite(event *Event) *Event {
 		node = v.Copy()
 	}
 
-	ast.TransformVars(node, func(v ast.Var) (ast.Value, error) {
+	_, _ = ast.TransformVars(node, func(v ast.Var) (ast.Value, error) {
 		if meta, ok := cpy.LocalMetadata[v]; ok {
 			return meta.Name, nil
 		}
