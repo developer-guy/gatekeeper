@@ -54,8 +54,8 @@ func (m *AssignMutator) Matches(obj runtime.Object, ns *corev1.Namespace) bool {
 	return matches
 }
 
-func (m *AssignMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
-	return core.Mutate(m, m.tester, m.testValue, obj)
+func (m *AssignMutator) Mutate(obj *unstructured.Unstructured, providerResponseCache map[string]string) (bool, error) {
+	return core.Mutate(m, m.tester, m.testValue, obj, providerResponseCache)
 }
 
 // valueTest returns true if it is okay for the mutation func to override the value

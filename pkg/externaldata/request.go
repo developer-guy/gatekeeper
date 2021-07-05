@@ -10,15 +10,14 @@ import (
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 )
 
-// admissionReq *admissionv1.AdmissionRequest
-func SendProviderRequest(provider externaldatav1alpha1.Provider, source interface{}) (string, error) {
+func SendProviderRequest(provider externaldatav1alpha1.Provider, source interface{}) (map[string]interface{}, error) {
 	out, err := json.Marshal(source)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req, err := http.NewRequest("GET", provider.Spec.ProxyURL, bytes.NewBuffer(out))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -26,7 +25,7 @@ func SendProviderRequest(provider externaldatav1alpha1.Provider, source interfac
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -36,9 +35,15 @@ func SendProviderRequest(provider externaldatav1alpha1.Provider, source interfac
 		log.Info("*** BODY", "body", string(body))
 		if err != nil {
 			log.Error(err, "unable to read response body")
-			return "", err
+			return nil, err
 		}
 	}
 
-	return string(body), nil
+	var result map[string]interface{}
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }

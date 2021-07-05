@@ -25,7 +25,7 @@ type Mutator interface {
 	// Matches tells if the given object is eligible for this mutation.
 	Matches(obj runtime.Object, ns *corev1.Namespace) bool
 	// Mutate applies the mutation to the given object
-	Mutate(obj *unstructured.Unstructured) (bool, error)
+	Mutate(obj *unstructured.Unstructured, providerResponseCache map[string]string) (bool, error)
 	// ID returns the id of the current mutator.
 	ID() ID
 	// Has diff tells if the mutator has meaningful differences

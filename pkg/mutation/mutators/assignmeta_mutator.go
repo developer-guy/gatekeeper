@@ -61,14 +61,14 @@ func (m *AssignMetadataMutator) Matches(obj runtime.Object, ns *corev1.Namespace
 	return matches
 }
 
-func (m *AssignMetadataMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
+func (m *AssignMetadataMutator) Mutate(obj *unstructured.Unstructured, providerResponseCache map[string]string) (bool, error) {
 	t, err := tester.New([]tester.Test{
 		{SubPath: m.Path(), Condition: tester.MustNotExist},
 	})
 	if err != nil {
 		return false, err
 	}
-	return core.Mutate(m, t, nil, obj)
+	return core.Mutate(m, t, nil, obj, providerResponseCache)
 }
 func (m *AssignMetadataMutator) ID() types.ID {
 	return m.id

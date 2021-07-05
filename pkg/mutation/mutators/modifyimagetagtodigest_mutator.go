@@ -61,7 +61,7 @@ func (m *ModifyImageTagToDigestMutator) Matches(obj runtime.Object, ns *corev1.N
 	return matches
 }
 
-func (m *ModifyImageTagToDigestMutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
+func (m *ModifyImageTagToDigestMutator) Mutate(obj *unstructured.Unstructured, providerResponseCache map[string]string) (bool, error) {
 	t, err := tester.New([]tester.Test{
 		{SubPath: m.Path(), Condition: tester.MustExist},
 	})
@@ -69,7 +69,7 @@ func (m *ModifyImageTagToDigestMutator) Mutate(obj *unstructured.Unstructured) (
 		return false, err
 	}
 
-	return core.Mutate(m, t, m.testValue, obj)
+	return core.Mutate(m, t, m.testValue, obj, providerResponseCache)
 }
 
 // valueTest returns true if it is okay for the mutation func to override the value
