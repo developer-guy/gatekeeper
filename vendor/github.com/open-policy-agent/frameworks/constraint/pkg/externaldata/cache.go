@@ -5,12 +5,6 @@ import (
 	"sync"
 
 	"github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
-	"github.com/open-policy-agent/gatekeeper/pkg/logging"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-)
-
-var (
-	log = logf.Log.WithName("controller").WithValues(logging.Process, "externaldata_controller")
 )
 
 type ProviderCache struct {
@@ -28,7 +22,6 @@ func (c *ProviderCache) Get(key string) (v1alpha1.Provider, error) {
 	if v, ok := c.cache[key]; ok {
 		return v, nil
 	}
-
 	return v1alpha1.Provider{}, fmt.Errorf("key is not found in cache")
 }
 
@@ -44,8 +37,6 @@ func (c *ProviderCache) Upsert(provider *v1alpha1.Provider) error {
 			MaxRetry:      provider.Spec.MaxRetry,
 		},
 	}
-
-	log.Info("***", "cache", c.cache)
 
 	return nil
 }
