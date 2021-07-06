@@ -15,6 +15,11 @@ limitations under the License.
 
 package parser
 
+import (
+	"fmt"
+	"strings"
+)
+
 type NodeType string
 
 const (
@@ -29,6 +34,10 @@ const (
 type Node interface {
 	Type() NodeType
 	DeepCopyNode() Node
+	// String converts the Node into an equivalent String representation.
+	// Calling Parse on the result yields an equivalent Node, but may differ in
+	// structure if the Node is a Path containing Path Nodes.
+	String() string
 }
 
 // Path represents an entire parsed path specification
@@ -57,6 +66,19 @@ func (r Path) DeepCopy() Path {
 	return out
 }
 
+func (r Path) String() string {
+	result := strings.Builder{}
+	for i, n := range r.Nodes {
+		nStr := n.String()
+		if n.Type() == ObjectNode && i > 0 {
+			// No leading separator, and no separators before List Nodes.
+			result.WriteString(".")
+		}
+		result.WriteString(nStr)
+	}
+	return result.String()
+}
+
 type Object struct {
 	Reference string
 }
@@ -68,8 +90,8 @@ func (o Object) Type() NodeType {
 }
 
 func (o Object) DeepCopyNode() Node {
-	oout := o.DeepCopy()
-	return &oout
+	oOut := o.DeepCopy()
+	return &oOut
 }
 
 func (o Object) DeepCopy() Object {
@@ -78,9 +100,13 @@ func (o Object) DeepCopy() Object {
 	}
 }
 
+func (o Object) String() string {
+	return quote(o.Reference)
+}
+
 type List struct {
 	KeyField string
-	KeyValue *string
+	KeyValue interface{}
 	Glob     bool
 }
 
@@ -99,16 +125,50 @@ func (l List) DeepCopy() List {
 	out := List{}
 	out.KeyField = l.KeyField
 	out.Glob = l.Glob
-	if l.KeyValue != nil {
-		out.KeyValue = new(string)
-		*out.KeyValue = *l.KeyValue
-	}
+	// KeyValue (interface{}) will be one of: [string, int, nil]
+	out.KeyValue = l.KeyValue
 	return out
 }
 
-func (l List) Value() (string, bool) {
-	if l.KeyValue == nil {
-		return "", false
+func (l List) String() string {
+	key := quote(l.KeyField)
+	if l.Glob {
+		return fmt.Sprintf("[%s: *]", key)
 	}
-	return *l.KeyValue, true
+	switch v := l.KeyValue.(type) {
+	case string:
+		q := quote(v)
+		return fmt.Sprintf("[%s: %s]", key, q)
+
+	case int, int64:
+		return fmt.Sprintf("[%s: %d]", key, v)
+
+	case nil:
+	default:
+	}
+	// Represents an improperly specified List node.
+	return fmt.Sprintf("[%s: ]", key)
+}
+
+// quote optionally adds double quotes around the passed string if needed.
+// Quotes are needed for:
+//  * Strings containing whitespace, quotes, or other "ambiguous" characters that will
+//    be tokenized as non-strings and need escaping.
+//  * Strings starting digits, that would otherwise be tokenized as an integer
+//  * Empty strings
+func quote(s string) string {
+	if len(s) == 0 {
+		return `""`
+	}
+	switch {
+	case strings.ContainsAny(s, "'\"\t\n \\*[]:."),
+		strings.ContainsAny(s[0:1], "0123456789"):
+		// Using fmt.Sprintf with %q converts whitespace to escape sequences, and we
+		// don't want that.
+		s = strings.ReplaceAll(s, `\`, `\\`)
+		s = strings.ReplaceAll(s, `"`, `\"`)
+		return `"` + s + `"`
+	}
+
+	return s
 }

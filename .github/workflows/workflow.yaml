@@ -33,25 +33,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v2
-
-      - name: Set up Go 1.16
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.16
-
-      - name: Install golangci-lint
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/bin
-          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-          curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $GITHUB_WORKSPACE/bin v${GOLANGCILINT_VERSION}
-        env:
-          GOLANGCILINT_VERSION: 1.40.1
-
-      - name: Make lint
-        run: |
-          make lint
+    - uses: actions/checkout@v2
+      # source: https://github.com/golangci/golangci-lint-action
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v2
+      with:
+        # version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest` to use the latest version
+        version: v1.40.1
 
   test:
     name: "Unit test"
@@ -81,7 +69,7 @@ jobs:
           KUSTOMIZE_VERSION: 3.7.0
 
       - name: Codecov Upload
-        uses: codecov/codecov-action@v1.5.0
+        uses: codecov/codecov-action@v1.5.2
         with:
           flags: unittests
           file: ./cover.out
@@ -130,6 +118,48 @@ jobs:
           path: |
             logs-*.json
 
+  # This action is separate because it loads a k8s 1.22 from a separate source.  This isn't the
+  # pattern we want going forward, so keeping this separate makes it easy to delete in the future.
+  build_test_122:
+    name: "Build and Test - k8s 1.22"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Set up Go 1.16
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16
+
+      - name: Bootstrap e2e
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/bin
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+          make e2e-bootstrap KUBERNETES_VERSION="1.21.1" KIND_NODE_VERSION="openpolicyagent/kind-node-image:v1.22.0-alpha.2"
+
+      - name: Run e2e
+        run: |
+          make e2e-build-load-image IMG=gatekeeper-e2e:latest
+          make deploy IMG=gatekeeper-e2e:latest USE_LOCAL_IMG=true
+          # there should be no additional manifest changes
+          git diff --exit-code
+          make test-e2e
+
+      - name: Save logs
+        run: |
+          kubectl logs -n gatekeeper-system -l control-plane=controller-manager --tail=-1 > logs-controller.json
+          kubectl logs -n gatekeeper-system -l control-plane=audit-controller --tail=-1 > logs-audit.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        if: ${{ always() }}
+        with:
+          name: logs
+          path: |
+            logs-*.json
+
   helm_build_test:
     name: "[Helm] Build and Test"
     runs-on: ubuntu-latest
@@ -152,53 +182,12 @@ jobs:
         run: |
           make e2e-build-load-image IMG=gatekeeper-e2e-helm:latest
           make e2e-helm-deploy HELM_REPO=gatekeeper-e2e-helm HELM_RELEASE=latest HELM_VERSION=${{ matrix.HELM_VERSION }} GATEKEEPER_NAMESPACE=${{ matrix.GATEKEEPER_NAMESPACE }}
-          make test-e2e GATEKEEPER_NAMESPACE=${{ matrix.GATEKEEPER_NAMESPACE }}
+          make test-e2e GATEKEEPER_NAMESPACE=${{ matrix.GATEKEEPER_NAMESPACE }} ENABLE_MUTATION_TESTS=1
 
       - name: Save logs
         run: |
           kubectl logs -n ${{ matrix.GATEKEEPER_NAMESPACE }} -l control-plane=controller-manager --tail=-1 > logs-helm-${{ matrix.HELM_VERSION }}-${{ matrix.GATEKEEPER_NAMESPACE }}-controller.json
           kubectl logs -n ${{ matrix.GATEKEEPER_NAMESPACE }} -l control-plane=audit-controller --tail=-1 > logs-helm-${{ matrix.HELM_VERSION }}-${{ matrix.GATEKEEPER_NAMESPACE }}-audit.json
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
-        if: ${{ always() }}
-        with:
-          name: logs
-          path: |
-            logs-*.json
-
-  build_mutation_test:
-    name: "Build and Test Mutation"
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      matrix:
-        KUBERNETES_VERSION: ["1.19.11", "1.20.7", "1.21.1"]
-    steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v2
-
-      - name: Set up Go 1.16
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.16
-
-      - name: Bootstrap e2e
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/bin
-          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-          make e2e-bootstrap KUBERNETES_VERSION=${{ matrix.KUBERNETES_VERSION }}
-
-      - name: Run e2e mutation
-        run: |
-          make e2e-build-load-image IMG=gatekeeper-e2e:latest
-          make deploy-mutation IMG=gatekeeper-e2e:latest USE_LOCAL_IMG=true
-          make test-e2e ENABLE_MUTATION_TESTS=1
-
-      - name: Save logs
-        run: |
-          kubectl logs -n gatekeeper-system -l control-plane=controller-manager --tail=-1 > logs-controller-mutation.json
-          kubectl logs -n gatekeeper-system -l control-plane=audit-controller --tail=-1 > logs-audit-mutation.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
@@ -284,7 +273,7 @@ jobs:
           make e2e-verify-release IMG=${{ env.IMAGE_REPO }}:${TAG} USE_LOCAL_IMG=false
 
       - name: Create GitHub release
-        uses: "marvinpinto/action-automatic-releases@v1.1.1"
+        uses: "marvinpinto/action-automatic-releases@v1.2.1"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           prerelease: false

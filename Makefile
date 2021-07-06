@@ -6,7 +6,7 @@ IMG := $(REPOSITORY):latest
 DEV_TAG ?= dev
 USE_LOCAL_IMG ?= false
 
-VERSION := v3.4.0
+VERSION := v3.6.0-beta.2
 
 KIND_VERSION ?= 0.11.0
 # note: k8s version pinned since KIND image availability lags k8s releases
@@ -18,6 +18,13 @@ KUBECTL_KUSTOMIZE_VERSION ?= 1.20.1-${KUSTOMIZE_VERSION}
 HELM_VERSION ?= 3.4.2
 HELM_ARGS ?=
 GATEKEEPER_NAMESPACE ?= gatekeeper-system
+
+# When updating this, make sure to update the corresponding action in
+# workflow.yaml
+GOLANGCI_LINT_VERSION := v1.40.1
+
+# Detects the location of the user golangci-lint cache.
+GOLANGCI_LINT_CACHE := $(shell pwd)/.tmp/golangci-lint
 
 BUILD_COMMIT := $(shell ./build/get-build-commit.sh)
 BUILD_TIMESTAMP := $(shell ./build/get-build-timestamp.sh)
@@ -93,6 +100,7 @@ test:
 test-e2e:
 	bats -t ${BATS_TESTS_FILE}
 
+KIND_NODE_VERSION := kindest/node:v$(KUBERNETES_VERSION)
 e2e-bootstrap:
 	# Download and install kind
 	curl -L https://github.com/kubernetes-sigs/kind/releases/download/v${KIND_VERSION}/kind-linux-amd64 --output ${GITHUB_WORKSPACE}/bin/kind && chmod +x ${GITHUB_WORKSPACE}/bin/kind
@@ -105,7 +113,7 @@ e2e-bootstrap:
 	# Check for existing kind cluster
 	if [ $$(${GITHUB_WORKSPACE}/bin/kind get clusters) ]; then ${GITHUB_WORKSPACE}/bin/kind delete cluster; fi
 	# Create a new kind cluster
-	TERM=dumb ${GITHUB_WORKSPACE}/bin/kind create cluster --image kindest/node:v${KUBERNETES_VERSION} --wait 5m
+	TERM=dumb ${GITHUB_WORKSPACE}/bin/kind create cluster --image $(KIND_NODE_VERSION) --wait 5m
 
 e2e-build-load-image: docker-buildx
 	kind load docker-image --name kind ${IMG}
@@ -121,28 +129,37 @@ e2e-helm-install:
 	./.staging/helm/linux-amd64/helm version --client
 
 e2e-helm-deploy: e2e-helm-install
-	./.staging/helm/linux-amd64/helm install manifest_staging/charts/gatekeeper --name-template=gatekeeper -n ${GATEKEEPER_NAMESPACE} --create-namespace --debug \
-	--set image.repository=${HELM_REPO} \
-	--set image.release=${HELM_RELEASE} \
-	--set emitAdmissionEvents=true \
-	--set emitAuditEvents=true \
-	--set postInstall.labelNamespace.enabled=true \
-	--set disabledBuiltins={http.send};\
-
-e2e-helm-upgrade-init: e2e-helm-install
-		./.staging/helm/linux-amd64/helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts;\
-		./.staging/helm/linux-amd64/helm install gatekeeper gatekeeper/gatekeeper --version ${BASE_RELEASE} --debug --wait \
-		 --set emitAdmissionEvents=true \
-		 --set emitAuditEvents=true \
-		 --set customResourceDefinitions.create=false;\
-
-e2e-helm-upgrade:
-	./helm_migrate.sh
-	./.staging/helm/linux-amd64/helm install -n ${GATEKEEPER_NAMESPACE} gatekeeper manifest_staging/charts/gatekeeper --create-namespace --debug --wait \
+	./.staging/helm/linux-amd64/helm install manifest_staging/charts/gatekeeper --name-template=gatekeeper \
+		--namespace ${GATEKEEPER_NAMESPACE} --create-namespace \
+		--debug --wait \
 		--set image.repository=${HELM_REPO} \
 		--set image.release=${HELM_RELEASE} \
 		--set emitAdmissionEvents=true \
 		--set emitAuditEvents=true \
+		--set postInstall.labelNamespace.enabled=true \
+		--set experimentalEnableMutation=true \
+		--set disabledBuiltins={http.send};\
+
+e2e-helm-upgrade-init: e2e-helm-install
+	./.staging/helm/linux-amd64/helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts;\
+	./.staging/helm/linux-amd64/helm install gatekeeper gatekeeper/gatekeeper --version ${BASE_RELEASE} \
+		--namespace ${GATEKEEPER_NAMESPACE} --create-namespace \
+		--debug --wait \
+		--set emitAdmissionEvents=true \
+		--set emitAuditEvents=true \
+		--set postInstall.labelNamespace.enabled=true \
+		--set disabledBuiltins={http.send};\
+
+e2e-helm-upgrade:
+	./helm_migrate.sh
+	./.staging/helm/linux-amd64/helm upgrade gatekeeper manifest_staging/charts/gatekeeper \
+		--namespace ${GATEKEEPER_NAMESPACE} \
+		--debug --wait \
+		--set image.repository=${HELM_REPO} \
+		--set image.release=${HELM_RELEASE} \
+		--set emitAdmissionEvents=true \
+		--set emitAuditEvents=true \
+		--set postInstall.labelNamespace.enabled=true \
 		--set disabledBuiltins={http.send};\
 
 # Build manager binary
@@ -151,7 +168,7 @@ manager: generate
 
 # Build manager binary
 manager-osx: generate
-	GO111MODULE=on go build -mod vendor -o bin/manager GOOS=darwin  -ldflags $(LDFLAGS) main.go
+	GO111MODULE=on go build -mod vendor -o bin/manager GOOS=darwin -ldflags $(LDFLAGS) main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate manifests
@@ -163,7 +180,7 @@ install: manifests
 
 deploy-mutation: patch-image
 	@grep -q -v 'enable-mutation' ./config/overlays/dev_mutation/manager_image_patch.yaml && sed -i '/- --operation=webhook/a \ \ \ \ \ \ \ \ - --enable-mutation=true' ./config/overlays/dev_mutation/manager_image_patch.yaml && sed -i '/- --operation=status/a \ \ \ \ \ \ \ \ - --operation=mutation-status' ./config/overlays/dev_mutation/manager_image_patch.yaml
-	kustomize build config/overlays/dev_mutation | kubectl apply -f -
+	kustomize build --load_restrictor LoadRestrictionsNone config/overlays/dev_mutation | kubectl apply -f -
 	kustomize build --load_restrictor LoadRestrictionsNone config/overlays/mutation | kubectl apply -f -
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
@@ -182,15 +199,21 @@ manifests: __controller-gen
 	# As mutation CRDs are not ready to be included in our final gatekeeper.yaml, we leave them out of config/crd/kustomization.yaml.
 	# This makes these files unavailable to the helmify step below.  The solve for this was to copy the mutation CRDs into
 	# config/overlays/mutation_webhook/.  To maintain the generation pipeline, we do that copy step here.
-	cp config/crd/bases/mutations* config/overlays/mutation_webhook/
+	cp config/crd/bases/*mutat* config/overlays/mutation_webhook/
 	rm -rf manifest_staging
 	mkdir -p manifest_staging/deploy
 	mkdir -p manifest_staging/charts/gatekeeper
 	docker run --rm -v $(shell pwd):/gatekeeper --entrypoint /usr/local/bin/kustomize line/kubectl-kustomize:${KUBECTL_KUSTOMIZE_VERSION} build /gatekeeper/config/default -o /gatekeeper/manifest_staging/deploy/gatekeeper.yaml
-	docker run --rm -v $(shell pwd):/gatekeeper --entrypoint /usr/local/bin/kustomize line/kubectl-kustomize:${KUBECTL_KUSTOMIZE_VERSION} build /gatekeeper/cmd/build/helmify | go run cmd/build/helmify/*.go
+	docker run --rm -v $(shell pwd):/gatekeeper --entrypoint /usr/local/bin/kustomize line/kubectl-kustomize:${KUBECTL_KUSTOMIZE_VERSION} build --load_restrictor LoadRestrictionsNone /gatekeeper/cmd/build/helmify | go run cmd/build/helmify/*.go
 
+# lint runs a dockerized golangci-lint, and should give consistent results
+# across systems.
+# Source: https://golangci-lint.run/usage/install/#docker
 lint:
-	golangci-lint -v run ./... --timeout 5m
+	docker run --rm -v $(shell pwd):/app \
+	 -v ${GOLANGCI_LINT_CACHE}:/root/.cache/golangci-lint \
+	 -w /app golangci/golangci-lint:${GOLANGCI_LINT_VERSION}-alpine \
+	 golangci-lint run -v
 
 # Generate code
 generate: __controller-gen target-template-source

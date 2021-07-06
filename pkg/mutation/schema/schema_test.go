@@ -21,7 +21,7 @@ type mockMutator struct {
 	ForceDiff bool
 	Bindings  []Binding
 	path      string
-	pathCache *parser.Path
+	pathCache parser.Path
 }
 
 func (m *mockMutator) Matches(obj runtime.Object, ns *corev1.Namespace) bool { return false }
@@ -44,7 +44,7 @@ func (m *mockMutator) String() string {
 }
 
 func deepCopyBindings(bindings []Binding) []Binding {
-	cpy := []Binding{}
+	var cpy []Binding
 	for _, b := range bindings {
 		cpy = append(cpy, Binding{
 			Groups:   append([]string{}, b.Groups...),
@@ -70,8 +70,8 @@ func (m *mockMutator) DeepCopy() types.Mutator {
 
 func (m *mockMutator) SchemaBindings() []Binding { return m.Bindings }
 
-func (m *mockMutator) Path() *parser.Path {
-	if m.pathCache != nil {
+func (m *mockMutator) Path() parser.Path {
+	if len(m.pathCache.Nodes) > 0 {
 		return m.pathCache
 	}
 	out, err := parser.Parse(m.path)
@@ -1202,13 +1202,13 @@ func TestErrors(t *testing.T) {
 			name:        "Long path with conflict at end",
 			first:       "spec.intermediate.someValue[hey: \"there\"].buddy.hallo",
 			second:      "spec.intermediate.someValue[hey: again].buddy[key: *]",
-			expectedErr: `spec.intermediate.someValue["hey": "again"].buddy: node type conflict: Object vs List`,
+			expectedErr: `spec.intermediate.someValue[hey: again].buddy: node type conflict: Object vs List`,
 		},
 		{
 			name:        "Long path with conflict at end, globbed",
 			first:       "spec.intermediate.someValue[hey: \"there\"].buddy.hallo",
 			second:      "spec.intermediate.someValue[hey: *].buddy[key: *]",
-			expectedErr: `spec.intermediate.someValue["hey": *].buddy: node type conflict: Object vs List`,
+			expectedErr: `spec.intermediate.someValue[hey: *].buddy: node type conflict: Object vs List`,
 		},
 		{
 			name:        "Long path with conflict at beginning",

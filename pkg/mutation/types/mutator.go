@@ -7,9 +7,9 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/path/parser"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ID represent the identifier of a mutation object.
@@ -34,24 +34,20 @@ type Mutator interface {
 	// DeepCopy returns a copy of the current object
 	DeepCopy() Mutator
 	Value() (interface{}, error)
-	Path() *parser.Path
+	Path() parser.Path
 	String() string
 	GetExternalDataProvider() string
 	GetExternalDataCache(name string) (*externaldatav1alpha1.Provider, error)
 }
 
 // MakeID builds an ID object for the given object
-func MakeID(obj runtime.Object) (ID, error) {
-	meta, err := meta.Accessor(obj)
-	if err != nil {
-		return ID{}, errors.Wrapf(err, "Failed to get accessor for %s %s", obj.GetObjectKind().GroupVersionKind().Group, obj.GetObjectKind().GroupVersionKind().Kind)
-	}
+func MakeID(obj client.Object) ID {
 	return ID{
 		Group:     obj.GetObjectKind().GroupVersionKind().Group,
 		Kind:      obj.GetObjectKind().GroupVersionKind().Kind,
-		Name:      meta.GetName(),
-		Namespace: meta.GetNamespace(),
-	}, nil
+		Name:      obj.GetName(),
+		Namespace: obj.GetNamespace(),
+	}
 }
 
 // UnmarshalValue unmarshals the value a mutation is meant to assign

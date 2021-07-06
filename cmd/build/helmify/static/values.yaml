@@ -22,7 +22,7 @@ postInstall:
       pullSecrets: []
 image:
   repository: openpolicyagent/gatekeeper
-  release: v3.4.0
+  release: v3.6.0-beta.2
   pullPolicy: IfNotPresent
   pullSecrets: []
 podAnnotations:
@@ -31,6 +31,7 @@ podLabels: {}
 podCountLimit: 100
 secretAnnotations: {}
 controllerManager:
+  exemptNamespaces: []
   hostNetwork: false
   priorityClassName: system-cluster-critical
   affinity:
