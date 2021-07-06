@@ -179,12 +179,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	deleted = deleted || !modifyImageTagToDigest.GetDeletionTimestamp().IsZero()
 	tracker := r.tracker.For(gvkModifyImageTagToDigest)
 
-	mID, err := types.MakeID(modifyImageTagToDigest)
-	if err != nil {
-		tracker.TryCancelExpect(modifyImageTagToDigest)
-		log.Error(err, "Failed to get id out of ModifyImageTagToDigest")
-		return reconcile.Result{}, err
-	}
+	mID := types.MakeID(modifyImageTagToDigest)
 
 	if deleted {
 		tracker.CancelExpect(modifyImageTagToDigest)

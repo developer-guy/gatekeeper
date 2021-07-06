@@ -27,7 +27,7 @@ import (
 type ModifyImageTagToDigestMutator struct {
 	id                     types.ID
 	modifyImageTagToDigest *mutationsv1alpha1.ModifyImageTagToDigest
-	path                   *parser.Path
+	path                   parser.Path
 	bindings               []schema.Binding
 	tester                 *patht.Tester
 	valueTest              *mutationsv1alpha1.AssignIf
@@ -53,7 +53,7 @@ func (m *ModifyImageTagToDigestMutator) Matches(obj runtime.Object, ns *corev1.N
 	if !match.AppliesTo(m.modifyImageTagToDigest.Spec.ApplyTo, obj) {
 		return false
 	}
-	matches, err := match.Matches(m.modifyImageTagToDigest.Spec.Match, obj, ns)
+	matches, err := match.Matches(&m.modifyImageTagToDigest.Spec.Match, obj, ns)
 	if err != nil {
 		log.Error(err, "ModifyImageTagToDigestMutator.Matches failed", "modifyImageTagToDigest", m.modifyImageTagToDigest.Name)
 		return false
@@ -62,7 +62,7 @@ func (m *ModifyImageTagToDigestMutator) Matches(obj runtime.Object, ns *corev1.N
 }
 
 func (m *ModifyImageTagToDigestMutator) Mutate(obj *unstructured.Unstructured, providerResponseCache map[string]string) (bool, error) {
-	t, err := tester.New([]tester.Test{
+	t, err := tester.New(m.Path(), []tester.Test{
 		{SubPath: m.Path(), Condition: tester.MustExist},
 	})
 	if err != nil {
@@ -140,7 +140,7 @@ func (m *ModifyImageTagToDigestMutator) HasDiff(mutator types.Mutator) bool {
 	return false
 }
 
-func (m *ModifyImageTagToDigestMutator) Path() *parser.Path {
+func (m *ModifyImageTagToDigestMutator) Path() parser.Path {
 	return m.path
 }
 
@@ -148,7 +148,7 @@ func (m *ModifyImageTagToDigestMutator) DeepCopy() types.Mutator {
 	res := &ModifyImageTagToDigestMutator{
 		id:                     m.id,
 		modifyImageTagToDigest: m.modifyImageTagToDigest.DeepCopy(),
-		path: &parser.Path{
+		path: parser.Path{
 			Nodes: make([]parser.Node, len(m.path.Nodes)),
 		},
 		bindings:      make([]schema.Binding, len(m.bindings)),
@@ -176,10 +176,7 @@ func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.
 		return nil, fmt.Errorf("invalid location for ModifyImageTagToDigest %s: %s", modifyImageTagToDigest.GetName(), modifyImageTagToDigest.Spec.Location)
 	}
 
-	id, err := types.MakeID(modifyImageTagToDigest)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to retrieve id for ModifyImageTagToDigest type")
-	}
+	id := types.MakeID(modifyImageTagToDigest)
 
 	valueTests, err := modifyImageTagToDigest.ValueTests()
 	if err != nil {
@@ -207,7 +204,7 @@ func MutatorForModifyImageTagToDigest(modifyImageTagToDigest *mutationsv1alpha1.
 }
 
 // Verifies that the given path is a valid image
-func isValidImagePath(path *parser.Path) bool {
+func isValidImagePath(path parser.Path) bool {
 	return reflect.DeepEqual(path.Nodes[len(path.Nodes)-1], &parser.Object{Reference: "image"})
 }
 
