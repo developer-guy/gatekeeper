@@ -3,6 +3,7 @@ package mutators
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
@@ -67,6 +68,20 @@ func (m *ModifyImageTagToDigestMutator) Mutate(obj *unstructured.Unstructured, p
 	})
 	if err != nil {
 		return false, err
+	}
+
+	containers, _, _ := unstructured.NestedFieldNoCopy(obj.Object, "spec", "containers")
+	containerList, _ := containers.([]interface{})
+
+	for _, con := range containerList {
+		conMap, _ := con.(map[string]interface{})
+		image, _, _ := unstructured.NestedString(conMap, "image")
+
+		if strings.Contains(image, "sha256") {
+			continue
+		}
+
+		providerResponseCache[image] = ""
 	}
 
 	return core.Mutate(m, t, m.testValue, obj, providerResponseCache)

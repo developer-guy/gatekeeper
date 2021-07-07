@@ -32,7 +32,6 @@ func SendProviderRequest(provider externaldatav1alpha1.Provider, source interfac
 	var body []byte
 	if resp.StatusCode == 200 {
 		body, err = ioutil.ReadAll(resp.Body)
-		log.Info("*** BODY", "body", string(body))
 		if err != nil {
 			log.Error(err, "unable to read response body")
 			return nil, err

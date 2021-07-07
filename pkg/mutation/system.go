@@ -97,13 +97,11 @@ func (s *System) Mutate(obj *unstructured.Unstructured, ns *corev1.Namespace) (b
 	providerResponseCache := make(map[string]string)
 
 	for i := 0; i < maxIterations; i++ {
-		// log.Info("***", "SYSTEM", i, "len(s.orderedMutators)", len(s.orderedMutators))
 		appliedMutations := []types.Mutator{}
 		old := obj.DeepCopy()
 
 		for _, m := range s.orderedMutators {
 			if m.Matches(obj, ns) {
-				log.Info("***", "Matches", i)
 				mutated, err := m.Mutate(obj, providerResponseCache)
 				if mutated && (*MutationLoggingEnabled || *MutationAnnotationsEnabled) {
 					appliedMutations = append(appliedMutations, m)
