@@ -12,6 +12,7 @@ require (
 	github.com/go-openapi/spec v0.20.3 // indirect
 	github.com/google/go-cmp v0.5.4
 	github.com/google/uuid v1.1.2
+	github.com/hashicorp/go-retryablehttp v0.7.0
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/onsi/ginkgo v1.15.0
 	github.com/onsi/gomega v1.10.5

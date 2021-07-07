@@ -39,8 +39,7 @@ func Mutate(mutator types.Mutator, tester *path.Tester, valueTest func(interface
 					log.Error(err, "failed to get external data provider cache")
 				}
 
-				// TODO handle maxRetry
-				resp, err = externaldata.SendProviderRequest(*providerCache, providerResponseCache)
+				resp, err = externaldata.SendProviderRequest(providerCache, providerResponseCache)
 				if err != nil {
 					// TODO handle failurePolicy
 					log.Error(err, "error while sending request to provider")
