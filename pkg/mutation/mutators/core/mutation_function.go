@@ -101,12 +101,22 @@ func (s *mutatorState) mutateInternal(current interface{}, depth int, providerRe
 			provider := s.mutator.GetExternalDataProvider()
 			if provider != "" {
 				for key := range providerResponseCache {
-					if strings.EqualFold(key, currentAsObject[castPathEntry.Reference].(string)) {
-						value = providerResponseCache[key]
-					}
 
-					if strings.EqualFold(providerResponseCache[key], currentAsObject[castPathEntry.Reference].(string)) {
-						value = currentAsObject[castPathEntry.Reference]
+					log.Info("***", "providerResponseCache[key]", providerResponseCache[key])
+
+					if currentAsObject[castPathEntry.Reference] != nil {
+						// object value is same as cache key so we have not mutated the object yet
+						if strings.EqualFold(key, currentAsObject[castPathEntry.Reference].(string)) {
+							value = providerResponseCache[key]
+						}
+
+						// object value is same as cache value so we have mutated the object already
+						if strings.EqualFold(providerResponseCache[key], currentAsObject[castPathEntry.Reference].(string)) {
+							value = currentAsObject[castPathEntry.Reference]
+						}
+					} else {
+						// when object does not exist yet
+						value = providerResponseCache[key]
 					}
 				}
 			} else {

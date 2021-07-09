@@ -55,6 +55,9 @@ func (m *AssignMutator) Matches(obj runtime.Object, ns *corev1.Namespace) bool {
 }
 
 func (m *AssignMutator) Mutate(obj *unstructured.Unstructured, providerResponseCache map[string]string) (bool, error) {
+
+	providerResponseCache[m.ID().Name] = ""
+
 	return core.Mutate(m, m.tester, m.testValue, obj, providerResponseCache)
 }
 

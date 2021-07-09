@@ -68,8 +68,12 @@ func (m *AssignMetadataMutator) Mutate(obj *unstructured.Unstructured, providerR
 	if err != nil {
 		return false, err
 	}
+
+	providerResponseCache[m.ID().Name] = ""
+
 	return core.Mutate(m, t, nil, obj, providerResponseCache)
 }
+
 func (m *AssignMetadataMutator) ID() types.ID {
 	return m.id
 }

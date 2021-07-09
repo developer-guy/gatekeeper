@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
+	"net/http"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	externaldatav1alpha1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1alpha1"
 )
 
@@ -16,18 +16,14 @@ func SendProviderRequest(provider *externaldatav1alpha1.Provider, source interfa
 		return nil, err
 	}
 
-	retryClient := retryablehttp.NewClient()
-	retryClient.Logger = nil
-	retryClient.RetryMax = provider.Spec.MaxRetry
-	retryClient.HTTPClient.Timeout = time.Second * time.Duration(provider.Spec.Timeout)
-
-	req, err := retryablehttp.NewRequest("GET", provider.Spec.ProxyURL, bytes.NewBuffer(out))
+	req, err := http.NewRequest("GET", provider.Spec.ProxyURL, bytes.NewBuffer(out))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := retryClient.Do(req)
+	timeout := time.Second * time.Duration(provider.Spec.Timeout)
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +43,7 @@ func SendProviderRequest(provider *externaldatav1alpha1.Provider, source interfa
 	if err != nil {
 		return nil, err
 	}
+	log.Info("***", "result", result)
 
 	return result, nil
 }
