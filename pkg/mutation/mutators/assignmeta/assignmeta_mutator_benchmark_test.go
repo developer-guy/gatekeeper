@@ -1,30 +1,22 @@
 package assignmeta
 
 import (
-	"encoding/json"
 	"testing"
 
-	"github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	"github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
-func makeValue(v interface{}) runtime.RawExtension {
-	v2 := map[string]interface{}{
-		"value": v,
-	}
-	j, err := json.Marshal(v2)
-	if err != nil {
-		panic(err)
-	}
-	return runtime.RawExtension{Raw: j}
+func makeValue(v interface{}) unversioned.AssignField {
+	return unversioned.AssignField{Value: &types.Anything{Value: v}}
 }
 
-func assignMetadata(value interface{}, location string) *v1alpha1.AssignMetadata {
-	result := &v1alpha1.AssignMetadata{
-		Spec: v1alpha1.AssignMetadataSpec{
+func assignMetadata(value interface{}, location string) *unversioned.AssignMetadata {
+	result := &unversioned.AssignMetadata{
+		Spec: unversioned.AssignMetadataSpec{
 			Location: location,
-			Parameters: v1alpha1.MetadataParameters{
+			Parameters: unversioned.MetadataParameters{
 				Assign: makeValue(value),
 			},
 		},

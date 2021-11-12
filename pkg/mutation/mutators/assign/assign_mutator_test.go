@@ -1,7 +1,6 @@
 package assign
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -9,9 +8,10 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
-	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	mutationsunversioned "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	path "github.com/open-policy-agent/gatekeeper/pkg/mutation/path/tester"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,25 +20,18 @@ import (
 )
 
 type assignTestCfg struct {
-	value     runtime.RawExtension
+	value     mutationsunversioned.AssignField
 	path      string
-	pathTests []mutationsv1alpha1.PathTest
+	pathTests []mutationsunversioned.PathTest
 	applyTo   []match.ApplyTo
 }
 
-func makeValue(v interface{}) runtime.RawExtension {
-	v2 := map[string]interface{}{
-		"value": v,
-	}
-	j, err := json.Marshal(v2)
-	if err != nil {
-		panic(err)
-	}
-	return runtime.RawExtension{Raw: j}
+func makeValue(v interface{}) mutationsunversioned.AssignField {
+	return mutationsunversioned.AssignField{Value: &types.Anything{Value: v}}
 }
 
 func newAssignMutator(cfg *assignTestCfg) *Mutator {
-	m := &mutationsv1alpha1.Assign{
+	m := &mutationsunversioned.Assign{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "Foo",
 		},
@@ -142,7 +135,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureMissing(u, "spec", "please", "greet", "me")
@@ -155,7 +148,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureMissing(u, "spec", "please", "greet", "me")
@@ -168,7 +161,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureObj(u, "hello", "spec", "please", "greet", "me")
@@ -181,7 +174,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureObj(u, "hello", "spec", "please", "greet", "me")
@@ -194,7 +187,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureObj(u, "hello", "spec", "please", "greet", "me")
@@ -207,7 +200,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureObj(u, "hello", "spec", "please", "greet", "me")
@@ -220,7 +213,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureObj(u, map[string]interface{}{}, "spec", "please", "greet", "me")
@@ -233,7 +226,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("hello"),
 				path:      "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.please.greet.me", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				return ensureObj(u, "never", "spec", "please", "greet", "me")
@@ -254,7 +247,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:*].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -284,7 +277,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:*].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -315,7 +308,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:*].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -346,7 +339,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:*].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:*].securityPolicy", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -377,7 +370,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue(map[string]interface{}{"name": "sidecar"}),
 				path:      "spec.containers[name:sidecar]",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -414,7 +407,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue(map[string]interface{}{"name": "sidecar"}),
 				path:      "spec.containers[name:sidecar]",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -452,7 +445,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue(map[string]interface{}{"name": "sidecar", "clobbered": "yes"}),
 				path:      "spec.containers[name:sidecar]",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -486,7 +479,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue(map[string]interface{}{"name": "sidecar", "clobbered": "yes"}),
 				path:      "spec.containers[name:sidecar]",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:sidecar]", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -517,7 +510,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:c2].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -549,7 +542,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:c2].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -581,7 +574,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:sidecar].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:sidecar].securityPolicy", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:sidecar].securityPolicy", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -609,7 +602,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:c2].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -633,7 +626,7 @@ func TestPathTests(t *testing.T) {
 				applyTo:   []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:     makeValue("made-by-mutation"),
 				path:      "spec.containers[name:c2].securityPolicy",
-				pathTests: []mutationsv1alpha1.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustNotExist}},
+				pathTests: []mutationsunversioned.PathTest{{SubPath: "spec.containers[name:c2]", Condition: path.MustNotExist}},
 			},
 			fn: func(u *unstructured.Unstructured) error {
 				obj := []interface{}{
@@ -656,7 +649,7 @@ func TestPathTests(t *testing.T) {
 				applyTo: []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:   makeValue("hello"),
 				path:    "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{
+				pathTests: []mutationsunversioned.PathTest{
 					{SubPath: "spec.please.greet", Condition: path.MustExist},
 					{SubPath: "spec.please.greet.me", Condition: path.MustNotExist},
 				},
@@ -672,7 +665,7 @@ func TestPathTests(t *testing.T) {
 				applyTo: []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:   makeValue("hello"),
 				path:    "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{
+				pathTests: []mutationsunversioned.PathTest{
 					{SubPath: "spec.please.greet", Condition: path.MustExist},
 					{SubPath: "spec.please.greet.me", Condition: path.MustNotExist},
 				},
@@ -688,7 +681,7 @@ func TestPathTests(t *testing.T) {
 				applyTo: []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:   makeValue("hello"),
 				path:    "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{
+				pathTests: []mutationsunversioned.PathTest{
 					{SubPath: "spec.please.greet", Condition: path.MustExist},
 					{SubPath: "spec.please.greet.me", Condition: path.MustNotExist},
 				},
@@ -704,7 +697,7 @@ func TestPathTests(t *testing.T) {
 				applyTo: []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
 				value:   makeValue("hello"),
 				path:    "spec.please.greet.me",
-				pathTests: []mutationsv1alpha1.PathTest{
+				pathTests: []mutationsunversioned.PathTest{
 					{SubPath: "spec.please.greet", Condition: path.MustExist},
 				},
 			},
@@ -826,6 +819,28 @@ func TestAssign(t *testing.T) {
 		cfg  *assignTestCfg
 		fn   func(*unstructured.Unstructured) error
 	}{
+		{
+			name: "metadata value",
+			cfg: &assignTestCfg{
+				applyTo: []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Foo"}}},
+				path:    `spec.value`,
+				value:   mutationsunversioned.AssignField{FromMetadata: &mutationsunversioned.FromMetadata{Field: mutationsunversioned.ObjName}},
+			},
+			obj: newFoo(map[string]interface{}{}),
+			fn: func(u *unstructured.Unstructured) error {
+				v, exists, err := unstructured.NestedString(u.Object, "spec", "value")
+				if err != nil {
+					return err
+				}
+				if !exists {
+					return errors.New("spec.value does not exist, wanted creation")
+				}
+				if v != "my-foo" {
+					return fmt.Errorf("spec.value = %v; wanted %v", v, "my-foo")
+				}
+				return nil
+			},
+		},
 		{
 			name: "integer key value",
 			cfg: &assignTestCfg{

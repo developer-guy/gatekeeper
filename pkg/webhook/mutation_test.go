@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
-	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	mutationsunversioned "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assign"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/assignmeta"
+	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,16 +21,20 @@ import (
 	atypes "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+func makeValue(v interface{}) mutationsunversioned.AssignField {
+	return mutationsunversioned.AssignField{Value: &types.Anything{Value: v}}
+}
+
 func TestWebhookAssign(t *testing.T) {
 	sys := mutation.NewSystem(mutation.SystemOpts{})
 
-	v := &mutationsv1alpha1.Assign{
+	v := &mutationsunversioned.Assign{
 		ObjectMeta: metav1.ObjectMeta{Name: "AddFoo"},
-		Spec: mutationsv1alpha1.AssignSpec{
+		Spec: mutationsunversioned.AssignSpec{
 			ApplyTo:  []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"Pod"}}},
 			Location: "spec.value",
-			Parameters: mutationsv1alpha1.Parameters{
-				Assign: runtime.RawExtension{Raw: []byte(`{"value": "foo"}`)},
+			Parameters: mutationsunversioned.Parameters{
+				Assign: makeValue("foo"),
 			},
 		},
 	}
@@ -90,12 +95,12 @@ func TestWebhookAssign(t *testing.T) {
 func TestWebhookAssignMetadata(t *testing.T) {
 	sys := mutation.NewSystem(mutation.SystemOpts{})
 
-	v := &mutationsv1alpha1.AssignMetadata{
+	v := &mutationsunversioned.AssignMetadata{
 		ObjectMeta: metav1.ObjectMeta{Name: "AddFoo"},
-		Spec: mutationsv1alpha1.AssignMetadataSpec{
+		Spec: mutationsunversioned.AssignMetadataSpec{
 			Location: "metadata.labels.foo",
-			Parameters: mutationsv1alpha1.MetadataParameters{
-				Assign: runtime.RawExtension{Raw: []byte(`{"value": "bar"}`)},
+			Parameters: mutationsunversioned.MetadataParameters{
+				Assign: makeValue("bar"),
 			},
 		},
 	}

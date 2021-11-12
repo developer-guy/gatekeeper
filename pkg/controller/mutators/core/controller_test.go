@@ -17,15 +17,14 @@ package core
 
 import (
 	"fmt"
-	"os"
-	gosync "sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/onsi/gomega"
-	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	mutationsinternal "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
+	mutationsv1beta1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1beta1"
 	podstatus "github.com/open-policy-agent/gatekeeper/apis/status/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/mutatorstatus"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
@@ -35,6 +34,7 @@ import (
 	mutationschema "github.com/open-policy-agent/gatekeeper/pkg/mutation/schema"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/types"
 	"github.com/open-policy-agent/gatekeeper/pkg/readiness"
+	"github.com/open-policy-agent/gatekeeper/test/testutils"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
@@ -42,32 +42,34 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	apiTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const timeout = time.Second * 15
+
+func makeValue(v interface{}) mutationsv1beta1.AssignField {
+	return mutationsv1beta1.AssignField{Value: &types.Anything{Value: v}}
+}
 
 // setupManager sets up a controller-runtime manager with registered watch manager.
 func setupManager(t *testing.T) manager.Manager {
 	t.Helper()
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 	metrics.Registry = prometheus.NewRegistry()
 	mgr, err := manager.New(cfg, manager.Options{
 		MetricsBindAddress: "0",
 		MapperProvider: func(c *rest.Config) (meta.RESTMapper, error) {
 			return apiutil.NewDynamicRESTMapper(c)
 		},
+		Logger: testutils.NewLogger(t),
 	})
 	if err != nil {
 		t.Fatalf("setting up controller manager: %s", err)
@@ -75,18 +77,18 @@ func setupManager(t *testing.T) manager.Manager {
 	return mgr
 }
 
-func newAssign(name, location, value string) *mutationsv1alpha1.Assign {
-	return &mutationsv1alpha1.Assign{
+func newAssign(name, location, value string) *mutationsv1beta1.Assign {
+	return &mutationsv1beta1.Assign{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: mutationsv1alpha1.GroupVersion.String(),
+			APIVersion: mutationsv1beta1.GroupVersion.String(),
 			Kind:       "Assign",
 		},
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: mutationsv1alpha1.AssignSpec{
+		Spec: mutationsv1beta1.AssignSpec{
 			ApplyTo:  []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"ConfigMap"}}},
 			Location: location,
-			Parameters: mutationsv1alpha1.Parameters{
-				Assign: runtime.RawExtension{Raw: []byte(fmt.Sprintf(`{"value": %q}`, value))},
+			Parameters: mutationsv1beta1.Parameters{
+				Assign: makeValue(value),
 			},
 		},
 	}
@@ -94,15 +96,15 @@ func newAssign(name, location, value string) *mutationsv1alpha1.Assign {
 
 func TestReconcile(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	mutator := &mutationsv1alpha1.Assign{
+	mutator := &mutationsv1beta1.Assign{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "assign-test-obj",
 		},
-		Spec: mutationsv1alpha1.AssignSpec{
+		Spec: mutationsv1beta1.AssignSpec{
 			ApplyTo:  []match.ApplyTo{{Groups: []string{""}, Versions: []string{"v1"}, Kinds: []string{"ConfigMap"}}},
 			Location: "spec.test",
-			Parameters: mutationsv1alpha1.Parameters{
-				Assign: runtime.RawExtension{Raw: []byte(`{"value": "works"}`)},
+			Parameters: mutationsv1beta1.Parameters{
+				Assign: makeValue("works"),
 			},
 		},
 	}
@@ -117,23 +119,11 @@ func TestReconcile(t *testing.T) {
 	// status resources live by default
 	g.Expect(createGatekeeperNamespace(mgr.GetConfig())).To(gomega.BeNil())
 
-	// force mutation to be enabled
-	*mutation.MutationEnabled = true
-
 	mSys := mutation.NewSystem(mutation.SystemOpts{})
 
-	tracker, err := readiness.SetupTracker(mgr, true)
+	tracker, err := readiness.SetupTracker(mgr, true, false)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	err = os.Setenv("POD_NAME", "no-pod")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		err = os.Unsetenv("POD_NAME")
-		if err != nil {
-			t.Fatal(err)
-		}
-	}()
+	testutils.Setenv(t, "POD_NAME", "no-pod")
 
 	pod := fakes.Pod(
 		fakes.WithNamespace("gatekeeper-system"),
@@ -141,30 +131,26 @@ func TestReconcile(t *testing.T) {
 	)
 
 	kind := "Assign"
-	newObj := func() client.Object { return &mutationsv1alpha1.Assign{} }
+	newObj := func() client.Object { return &mutationsv1beta1.Assign{} }
 	newMutator := func(obj client.Object) (types.Mutator, error) {
-		assign := obj.(*mutationsv1alpha1.Assign) // nolint:forcetypeassert
-		return mutators.MutatorForAssign(assign)
+		assign := obj.(*mutationsv1beta1.Assign) // nolint:forcetypeassert
+		unversioned := &mutationsinternal.Assign{}
+		if err := mgr.GetScheme().Convert(assign, unversioned, nil); err != nil {
+			return nil, err
+		}
+		return mutators.MutatorForAssign(unversioned)
 	}
 	events := make(chan event.GenericEvent, 1024)
 
 	rec := newReconciler(mgr, mSys, tracker, func(ctx context.Context) (*corev1.Pod, error) { return pod, nil }, kind, newObj, newMutator, events)
+	adder := Adder{EventsSource: &source.Channel{Source: events}}
 
-	g.Expect(add(mgr, rec)).NotTo(gomega.HaveOccurred())
+	g.Expect(adder.add(mgr, rec)).NotTo(gomega.HaveOccurred())
 	statusAdder := &mutatorstatus.Adder{}
 	g.Expect(statusAdder.Add(mgr)).NotTo(gomega.HaveOccurred())
 
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	mgrStopped := StartTestManager(ctx, mgr, g)
-	once := gosync.Once{}
-	testMgrStopped := func() {
-		once.Do(func() {
-			cancelFunc()
-			mgrStopped.Wait()
-		})
-	}
-
-	defer testMgrStopped()
+	ctx := context.Background()
+	testutils.StartManager(ctx, t, mgr)
 
 	t.Run("Can add a mutator", func(t *testing.T) {
 		g.Expect(c.Create(ctx, mutator.DeepCopy())).NotTo(gomega.HaveOccurred())
@@ -172,7 +158,7 @@ func TestReconcile(t *testing.T) {
 
 	t.Run("Mutator is reported as enforced", func(t *testing.T) {
 		g.Eventually(func() error {
-			v := &mutationsv1alpha1.Assign{}
+			v := &mutationsv1beta1.Assign{}
 			v.SetName("assign-test-obj")
 			if err := c.Get(ctx, objName, v); err != nil {
 				return errors.Wrap(err, "cannot get mutator")
@@ -286,8 +272,6 @@ func TestReconcile(t *testing.T) {
 			return podStatusMatches(ctx, c, pod, mBar2ID, hasStatusErrors(nil))
 		})
 	})
-
-	testMgrStopped()
 }
 
 func podStatusMatches(ctx context.Context, c client.Client, pod *corev1.Pod, id types.ID, matchers ...PodStatusMatcher) error {

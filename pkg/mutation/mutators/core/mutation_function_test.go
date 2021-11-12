@@ -2,10 +2,9 @@ package core_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
-	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	mutationsunversioned "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
 	"github.com/open-policy-agent/gatekeeper/pkg/fakes"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators"
@@ -18,9 +17,12 @@ import (
 )
 
 const (
-	TestValue          = "testValue"
-	ParameterTestValue = "\"testValue\""
+	TestValue = "testValue"
 )
+
+func makeValue(v interface{}) mutationsunversioned.AssignField {
+	return mutationsunversioned.AssignField{Value: &types.Anything{Value: v}}
+}
 
 func prepareTestPod(t *testing.T) *unstructured.Unstructured {
 	pod := fakes.Pod(
@@ -71,7 +73,7 @@ func TestObjects(t *testing.T) {
 	}
 	if err := testAssignMetadataMutation(
 		"metadata.labels.labelA",
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -122,7 +124,7 @@ func TestObjectsAndLists(t *testing.T) {
 	if err := testAssignMutation(
 		"", "v1", "Pod",
 		`spec.containers["name": "testname2"].ports["name": "portName2B"].hostIP`,
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -136,7 +138,7 @@ func TestListsAsLastElementWithStringValue(t *testing.T) {
 
 	if err := testDummyMutation(
 		`spec.containers["name": "notExists"]`,
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -164,7 +166,10 @@ func TestListsAsLastElement(t *testing.T) {
 	if err := testAssignMutation(
 		"", "v1", "Pod",
 		`spec.containers["name": "notExists"]`,
-		"{\"name\": \"notExists\", \"foo\": \"foovalue\"}",
+		map[string]interface{}{
+			"name": "notExists",
+			"foo":  "foovalue",
+		},
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -192,7 +197,10 @@ func TestListsAsLastElementAlreadyExists(t *testing.T) {
 	if err := testAssignMutation(
 		"", "v1", "Pod",
 		`spec.containers["name": "testname1"]`,
-		"{\"name\": \"testname1\", \"foo\": \"bar\"}",
+		map[string]interface{}{
+			"name": "testname1",
+			"foo":  "bar",
+		},
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -216,7 +224,7 @@ func TestGlobbedList(t *testing.T) {
 			ports := containerAsMap["ports"]
 			for _, port := range ports.([]interface{}) {
 				if value, ok := port.(map[string]interface{})["protocol"]; !ok || value != TestValue {
-					t.Errorf("Expected value was not updated")
+					t.Errorf("Expected value was not updated: %v, wanted %v", value, TestValue)
 				}
 			}
 		}
@@ -225,7 +233,7 @@ func TestGlobbedList(t *testing.T) {
 	if err := testAssignMutation(
 		"", "v1", "Pod",
 		`spec.containers["name": *].ports["name": *].protocol`,
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -247,7 +255,7 @@ func TestNonExistingPathEntry(t *testing.T) {
 	if err := testAssignMutation(
 		"", "v1", "Pod",
 		"spec.element.should.be.added",
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -282,7 +290,7 @@ func TestNonExistingListPathEntry(t *testing.T) {
 	if err := testAssignMutation(
 		"", "v1", "Pod",
 		`spec.element["name": "value"].element2.added`,
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -303,7 +311,7 @@ func TestAssignMetadataDoesNotUpdateExistingLabel(t *testing.T) {
 	}
 	if err := testAssignMetadataMutation(
 		`metadata.labels.a`,
-		ParameterTestValue,
+		TestValue,
 		prepareTestPod(t),
 		testFunc,
 		t,
@@ -313,7 +321,7 @@ func TestAssignMetadataDoesNotUpdateExistingLabel(t *testing.T) {
 }
 
 func TestAssignDoesNotMatchObjectStructure(t *testing.T) {
-	if err := testAssignMutation("", "v1", "Pod", `spec.containers.ports.protocol`, ParameterTestValue, prepareTestPod(t), nil, t); err == nil {
+	if err := testAssignMutation("", "v1", "Pod", `spec.containers.ports.protocol`, TestValue, prepareTestPod(t), nil, t); err == nil {
 		t.Errorf("Error should be returned for mismatched path and object structure")
 	}
 }
@@ -351,25 +359,23 @@ func testDummyMutation(
 func testAssignMutation(
 	group, version, kind string,
 	location string,
-	value string,
+	value interface{},
 	unstructured *unstructured.Unstructured,
 	testFunc func(*unstructured.Unstructured),
 	t *testing.T) error {
-	assign := mutationsv1alpha1.Assign{
+	assign := mutationsunversioned.Assign{
 		ObjectMeta: metav1.ObjectMeta{},
-		Spec: mutationsv1alpha1.AssignSpec{
+		Spec: mutationsunversioned.AssignSpec{
 			ApplyTo:  []match.ApplyTo{{Groups: []string{group}, Versions: []string{version}, Kinds: []string{kind}}},
 			Location: location,
-			Parameters: mutationsv1alpha1.Parameters{
-				Assign: runtime.RawExtension{
-					Raw: []byte(fmt.Sprintf("{\"value\": %s}", value)),
-				},
+			Parameters: mutationsunversioned.Parameters{
+				Assign: makeValue(value),
 			},
 		},
 	}
 	mutator, err := mutators.MutatorForAssign(&assign)
 	if err != nil {
-		t.Error("Unexpected error", err)
+		t.Fatal("Unexpected error", err)
 	}
 	return testMutation(mutator, unstructured, testFunc, t)
 }
@@ -380,20 +386,18 @@ func testAssignMetadataMutation(
 	unstructured *unstructured.Unstructured,
 	testFunc func(*unstructured.Unstructured),
 	t *testing.T) error {
-	assignMetadata := mutationsv1alpha1.AssignMetadata{
+	assignMetadata := mutationsunversioned.AssignMetadata{
 		ObjectMeta: metav1.ObjectMeta{},
-		Spec: mutationsv1alpha1.AssignMetadataSpec{
+		Spec: mutationsunversioned.AssignMetadataSpec{
 			Location: location,
-			Parameters: mutationsv1alpha1.MetadataParameters{
-				Assign: runtime.RawExtension{
-					Raw: []byte(fmt.Sprintf("{\"value\":%s}", value)),
-				},
+			Parameters: mutationsunversioned.MetadataParameters{
+				Assign: makeValue(value),
 			},
 		},
 	}
 	mutator, err := mutators.MutatorForAssignMetadata(&assignMetadata)
 	if err != nil {
-		t.Error("Unexpected error", err)
+		t.Fatal("Unexpected error", err)
 	}
 	return testMutation(mutator, unstructured, testFunc, t)
 }

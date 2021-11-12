@@ -7,6 +7,8 @@ var replacements = map[string]string{
 
 	"HELMSUBST_DEPLOYMENT_CONTROLLER_MANAGER_HOST_NETWORK": `{{ .Values.controllerManager.hostNetwork }}`,
 
+	"HELMSUBST_DEPLOYMENT_CONTROLLER_MANAGER_DNS_POLICY": `{{ .Values.controllerManager.dnsPolicy }}`,
+
 	"HELMSUBST_DEPLOYMENT_CONTROLLER_MANAGER_PORT": `{{ .Values.controllerManager.port }}`,
 
 	"HELMSUBST_DEPLOYMENT_CONTROLLER_MANAGER_HEALTH_PORT": `{{ .Values.controllerManager.healthPort }}`,
@@ -14,6 +16,8 @@ var replacements = map[string]string{
 	"HELMSUBST_DEPLOYMENT_CONTROLLER_MANAGER_METRICS_PORT": `{{ .Values.controllerManager.metricsPort }}`,
 
 	"HELMSUBST_DEPLOYMENT_AUDIT_HOST_NETWORK": `{{ .Values.audit.hostNetwork }}`,
+
+	"HELMSUBST_DEPLOYMENT_AUDIT_DNS_POLICY": `{{ .Values.audit.dnsPolicy }}`,
 
 	"HELMSUBST_DEPLOYMENT_AUDIT_HEALTH_PORT": `{{ .Values.audit.healthPort }}`,
 
@@ -44,6 +48,10 @@ var replacements = map[string]string{
 	`HELMSUBST_ANNOTATIONS: ""`: `{{- toYaml .Values.podAnnotations | trim | nindent 8 }}`,
 
 	"HELMSUBST_SECRET_ANNOTATIONS": `{{- toYaml .Values.secretAnnotations | trim | nindent 4 }}`,
+
+	"- HELMSUBST_MUTATION_ENABLED_ARG": `{{ if not .Values.disableMutation}}- --operation=mutation-webhook{{- end }}`,
+
+	"- HELMSUBST_MUTATION_STATUS_ENABLED_ARG": `{{ if not .Values.disableMutation}}- --operation=mutation-status{{- end }}`,
 
 	"HELMSUBST_MUTATING_WEBHOOK_FAILURE_POLICY": `{{ .Values.mutatingWebhookFailurePolicy }}`,
 

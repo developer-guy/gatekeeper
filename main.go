@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"github.com/open-policy-agent/cert-controller/pkg/rotator"
 	opa "github.com/open-policy-agent/frameworks/constraint/pkg/client"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/client/drivers/local"
+	frameworksexternaldata "github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 	api "github.com/open-policy-agent/gatekeeper/apis"
 	configv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/config/v1alpha1"
 	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
@@ -35,6 +37,7 @@ import (
 	"github.com/open-policy-agent/gatekeeper/pkg/audit"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller"
 	"github.com/open-policy-agent/gatekeeper/pkg/controller/config/process"
+	"github.com/open-policy-agent/gatekeeper/pkg/externaldata"
 	"github.com/open-policy-agent/gatekeeper/pkg/metrics"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation"
 	"github.com/open-policy-agent/gatekeeper/pkg/operations"
@@ -71,14 +74,11 @@ var webhooks = []rotator.WebhookInfo{
 
 const (
 	secretName     = "gatekeeper-webhook-server-cert"
-	serviceName    = "gatekeeper-webhook-service"
 	caName         = "gatekeeper-ca"
 	caOrganization = "gatekeeper"
 )
 
 var (
-	// DNSName is <service name>.<namespace>.svc.
-	dnsName          = fmt.Sprintf("%s.%s.svc", serviceName, util.GetNamespace())
 	scheme           = runtime.NewScheme()
 	setupLog         = ctrl.Log.WithName("setup")
 	logLevelEncoders = map[string]zapcore.LevelEncoder{
@@ -100,6 +100,7 @@ var (
 	disableCertRotation = flag.Bool("disable-cert-rotation", false, "disable automatic generation and rotation of webhook TLS certificates/keys")
 	enableProfile       = flag.Bool("enable-pprof", false, "enable pprof profiling")
 	profilePort         = flag.Int("pprof-port", 6060, "port for pprof profiling. defaulted to 6060 if unspecified")
+	certServiceName     = flag.String("cert-service-name", "gatekeeper-webhook-service", "The service name used to generate the TLS cert's hostname. Defaults to gatekeeper-webhook-service")
 	disabledBuiltins    = util.NewFlagSet()
 )
 
@@ -151,6 +152,11 @@ func main() {
 		ctrl.SetLogger(logger)
 		klog.SetLogger(logger)
 	}
+
+	if *mutation.DeprecatedMutationEnabled {
+		setupLog.Error(errors.New("--enable-mutation flag is deprecated"), "use of deprecated flag")
+	}
+
 	config := ctrl.GetConfigOrDie()
 	config.UserAgent = version.GetUserAgent()
 
@@ -189,7 +195,7 @@ func main() {
 			CertDir:        *certDir,
 			CAName:         caName,
 			CAOrganization: caOrganization,
-			DNSName:        dnsName,
+			DNSName:        fmt.Sprintf("%s.%s.svc", *certServiceName, util.GetNamespace()),
 			IsReady:        setupFinished,
 			Webhooks:       webhooks,
 		}); err != nil {
@@ -205,7 +211,7 @@ func main() {
 	sw := watch.NewSwitch()
 
 	// Setup tracker and register readiness probe.
-	tracker, err := readiness.SetupTracker(mgr, *mutation.MutationEnabled)
+	tracker, err := readiness.SetupTracker(mgr, mutation.Enabled(), *externaldata.ExternalDataEnabled)
 	if err != nil {
 		setupLog.Error(err, "unable to register readiness tracker")
 		os.Exit(1)
@@ -242,8 +248,15 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 	// Block until the setup (certificate generation) finishes.
 	<-setupFinished
 
+	var providerCache *frameworksexternaldata.ProviderCache
+	args := []local.Arg{local.Tracing(false), local.DisableBuiltins(disabledBuiltins.ToSlice()...)}
+	if *externaldata.ExternalDataEnabled {
+		providerCache = frameworksexternaldata.NewCache()
+		args = append(args, local.AddExternalDataProviderCache(providerCache))
+	}
 	// initialize OPA
-	driver := local.New(local.Tracing(false), local.DisableBuiltins(disabledBuiltins.ToSlice()...))
+	driver := local.New(args...)
+
 	backend, err := opa.NewBackend(opa.Driver(driver))
 	if err != nil {
 		setupLog.Error(err, "unable to set up OPA backend")
@@ -287,6 +300,7 @@ func setupControllers(mgr ctrl.Manager, sw *watch.ControllerSwitch, tracker *rea
 		Tracker:          tracker,
 		ProcessExcluder:  processExcluder,
 		MutationSystem:   mutationSystem,
+		ProviderCache:    providerCache,
 	}
 
 	ctx := context.Background()

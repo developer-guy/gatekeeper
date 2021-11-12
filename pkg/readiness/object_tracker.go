@@ -290,7 +290,10 @@ func (t *objectTracker) Satisfied() bool {
 
 	// Proceed only if we have state changes to make.
 	if !needMutate {
+		// Read lock to prevent concurrent read/write while logging readiness state.
+		t.mu.RLock()
 		log.V(1).Info("readiness state", "gvk", t.gvk, "satisfied", fmt.Sprintf("%d/%d", len(t.satisfied), len(t.expect)+len(t.satisfied)))
+		t.mu.RUnlock()
 		return false
 	}
 
@@ -401,7 +404,12 @@ func objKeyFromObject(obj runtime.Object) (objKey, error) {
 			gvk = ugvk
 		}
 	default:
-		gvk = obj.GetObjectKind().GroupVersionKind()
+		// unfortunately gvk is not always populated by kubernetes, we would need access
+		// to the scheme to make an educated guess on the conversion between K8s struct
+		// and GVK. Fortunately, if we aren't talking about constraints/templates, there
+		// is no parent/child relationship, and all other object trackers already index
+		// by gvk
+		gvk = schema.GroupVersionKind{}
 	}
 
 	nn := types.NamespacedName{Namespace: accessor.GetNamespace(), Name: accessor.GetName()}

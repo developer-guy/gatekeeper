@@ -1,12 +1,12 @@
 package assignmeta
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 
 	"github.com/google/go-cmp/cmp"
-	mutationsv1alpha1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1alpha1"
+	mutationsunversioned "github.com/open-policy-agent/gatekeeper/apis/mutations/unversioned"
+	mutationsv1beta1 "github.com/open-policy-agent/gatekeeper/apis/mutations/v1beta1"
 	"github.com/open-policy-agent/gatekeeper/pkg/logging"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/match"
 	"github.com/open-policy-agent/gatekeeper/pkg/mutation/mutators/core"
@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -46,8 +47,7 @@ var (
 // AssignMeta instance.
 type Mutator struct {
 	id             types.ID
-	assignMetadata *mutationsv1alpha1.AssignMetadata
-	assignValue    string
+	assignMetadata *mutationsunversioned.AssignMetadata
 
 	path parser.Path
 
@@ -71,7 +71,11 @@ func (m *Mutator) Mutate(obj *unstructured.Unstructured) (bool, error) {
 	// function instead of using a generic function. AssignMetadata only ever
 	// mutates metadata.annotations or metadata.labels, and we spend ~70% of
 	// compute covering cases that aren't valid for this Mutator.
-	return core.Mutate(m.path, m.tester, core.NewDefaultSetter(m), obj)
+	value, err := m.assignMetadata.Spec.Parameters.Assign.GetValue(obj)
+	if err != nil {
+		return false, err
+	}
+	return core.Mutate(m.path, m.tester, core.NewDefaultSetter(value), obj)
 }
 
 func (m *Mutator) ID() types.ID {
@@ -103,15 +107,10 @@ func (m *Mutator) DeepCopy() types.Mutator {
 	res := &Mutator{
 		id:             m.id,
 		assignMetadata: m.assignMetadata.DeepCopy(),
-		assignValue:    m.assignValue,
 		path:           m.path.DeepCopy(),
 		tester:         m.tester.DeepCopy(),
 	}
 	return res
-}
-
-func (m *Mutator) Value() (interface{}, error) {
-	return m.assignValue, nil
 }
 
 func (m *Mutator) String() string {
@@ -119,7 +118,10 @@ func (m *Mutator) String() string {
 }
 
 // MutatorForAssignMetadata builds an Mutator from the given AssignMetadata object.
-func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) (*Mutator, error) {
+func MutatorForAssignMetadata(assignMeta *mutationsunversioned.AssignMetadata) (*Mutator, error) {
+	// This is not always set by the kubernetes API server
+	assignMeta.SetGroupVersionKind(runtimeschema.GroupVersionKind{Group: mutationsv1beta1.GroupVersion.Group, Kind: "AssignMetadata"})
+
 	path, err := parser.Parse(assignMeta.Spec.Location)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid location format for AssignMetadata %s: %s", assignMeta.GetName(), assignMeta.Spec.Location)
@@ -128,18 +130,15 @@ func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) (*Mu
 		return nil, fmt.Errorf("invalid location for assignmetadata %s: %s", assignMeta.GetName(), assignMeta.Spec.Location)
 	}
 
-	assign := make(map[string]interface{})
-	err = json.Unmarshal([]byte(assignMeta.Spec.Parameters.Assign.Raw), &assign)
-	if err != nil {
-		return nil, errors.Wrap(err, "invalid format for parameters.assign")
+	potentialValue := assignMeta.Spec.Parameters.Assign
+	if err := potentialValue.Validate(); err != nil {
+		return nil, err
 	}
-	value, ok := assign["value"]
-	if !ok {
-		return nil, errors.New("spec.parameters.assign must have a string value field for AssignMetadata " + assignMeta.GetName())
-	}
-	valueString, isString := value.(string)
-	if !isString {
-		return nil, errors.New("spec.parameters.assign.value field must be a string for AssignMetadata " + assignMeta.GetName())
+
+	if potentialValue.Value != nil {
+		if _, ok := potentialValue.Value.GetValue().(string); !ok {
+			return nil, fmt.Errorf("spec.parameters.assign.value field must be a string for AssignMetadata %q", assignMeta.GetName())
+		}
 	}
 
 	t, err := tester.New(path, []tester.Test{
@@ -152,7 +151,6 @@ func MutatorForAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) (*Mu
 	return &Mutator{
 		id:             types.MakeID(assignMeta),
 		assignMetadata: assignMeta.DeepCopy(),
-		assignValue:    valueString,
 		path:           path,
 		tester:         t,
 	}, nil
@@ -179,7 +177,7 @@ func isValidMetadataPath(path parser.Path) bool {
 
 // IsValidAssignMetadata returns an error if the given assignmetadata object is not
 // semantically valid.
-func IsValidAssignMetadata(assignMeta *mutationsv1alpha1.AssignMetadata) error {
+func IsValidAssignMetadata(assignMeta *mutationsunversioned.AssignMetadata) error {
 	if _, err := MutatorForAssignMetadata(assignMeta); err != nil {
 		return err
 	}
